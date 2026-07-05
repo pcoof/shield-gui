@@ -1,0 +1,144 @@
+/* ==========================================================================
+   Shield GUI — 布局（三栏：左侧导航 + 顶栏 + 主内容）
+   ========================================================================== */
+.app {
+  display: grid;
+  grid-template-columns: var(--nav-width) 1fr;
+  grid-template-rows: var(--topbar-height) 1fr;
+  grid-template-areas:
+    "nav topbar"
+    "nav main";
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ---------- 左侧导航 ---------- */
+.nav {
+  grid-area: nav;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-4) 0;
+  overflow-y: auto;
+}
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-5) var(--sp-4);
+  margin-bottom: var(--sp-2);
+  border-bottom: 1px solid var(--border-muted);
+}
+.nav-brand-logo {
+  width: 30px; height: 30px;
+  border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--accent), var(--info));
+  display: grid; place-items: center;
+  color: var(--text-inverse);
+  font-weight: 700;
+  font-size: 16px;
+  box-shadow: 0 2px 8px var(--accent-muted);
+}
+.nav-brand-text { line-height: 1.15; }
+.nav-brand-name { font-size: var(--fs-md); font-weight: 700; letter-spacing: .3px; }
+.nav-brand-sub  { font-size: var(--fs-xs); color: var(--text-muted); }
+
+.nav-section { padding: var(--sp-3) var(--sp-3) var(--sp-1); }
+.nav-section-title {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: .8px;
+  color: var(--text-muted);
+  padding: 0 var(--sp-2) var(--sp-2);
+  font-weight: 600;
+}
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  margin: 1px 0;
+  color: var(--text-secondary);
+  border-radius: var(--r-md);
+  font-size: var(--fs-base);
+  text-align: left;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  border: 1px solid transparent;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+.nav-item.active {
+  background: var(--accent-muted);
+  color: var(--accent);
+  border-color: rgba(45, 212, 191, 0.25);
+}
+.nav-item-icon {
+  width: 18px; height: 18px;
+  display: grid; place-items: center;
+  flex-shrink: 0;
+}
+.nav-item-icon svg { width: 16px; height: 16px; }
+.nav-item-label { flex: 1; }
+.nav-item-badge {
+  font-size: var(--fs-xs);
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+  min-width: 18px;
+  text-align: center;
+}
+.nav-footer {
+  margin-top: auto;
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--border-muted);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  grid-area: topbar;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-6);
+  gap: var(--sp-4);
+}
+.topbar-title {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  display: flex; align-items: center; gap: var(--sp-3);
+}
+.topbar-subtitle { color: var(--text-muted); font-size: var(--fs-sm); font-weight: 400; }
+.topbar-actions { display: flex; align-items: center; gap: var(--sp-2); }
+
+/* ---------- 主内容区 ---------- */
+.main {
+  grid-area: main;
+  overflow-y: auto;
+  padding: var(--sp-6);
+  background: var(--bg-base);
+}
+.view { animation: fade-in var(--dur) var(--ease); }
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.view-header {
+  margin-bottom: var(--sp-5);
+}
+.view-title {
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  margin: 0 0 var(--sp-1);
+}
+.view-desc {
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  margin: 0;
+}

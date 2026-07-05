@@ -1,0 +1,122 @@
+/* ==========================================================================
+   Shield GUI — 设计 Token（深色专业风，类 VS Code / Docker Desktop）
+   ========================================================================== */
+:root {
+  /* 背景层 */
+  --bg-base:        #0d1117;   /* 最底层背景 */
+  --bg-surface:     #161b22;   /* 卡片/面板背景 */
+  --bg-elevated:    #1c2230;   /* 悬浮元素/表头 */
+  --bg-hover:       #21262d;   /* hover 态 */
+  --bg-active:      #2d333b;   /* 选中/激活态 */
+
+  /* 边框 */
+  --border-default: #30363d;
+  --border-muted:   #21262b;
+  --border-focus:   #2dd4bf;
+
+  /* 文字 */
+  --text-primary:   #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted:     #6e7681;
+  --text-inverse:   #0d1117;
+
+  /* 强调色（蓝青系） */
+  --accent:         #2dd4bf;   /* 主强调（青） */
+  --accent-hover:   #5eead4;
+  --accent-muted:   rgba(45, 212, 191, 0.12);
+  --info:           #3b82f6;   /* 蓝 */
+  --info-muted:     rgba(59, 130, 246, 0.12);
+
+  /* 语义色 */
+  --success:        #22c55e;
+  --success-muted:  rgba(34, 197, 94, 0.14);
+  --warning:        #f59e0b;
+  --warning-muted:  rgba(245, 158, 11, 0.14);
+  --danger:         #ef4444;
+  --danger-muted:   rgba(239, 68, 68, 0.14);
+  --purple:         #a78bfa;
+
+  /* 字号 */
+  --fs-xs:    11px;
+  --fs-sm:    12px;
+  --fs-base:  13px;
+  --fs-md:    14px;
+  --fs-lg:    16px;
+  --fs-xl:    19px;
+  --fs-2xl:   24px;
+
+  /* 圆角 */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 12px;
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.4);
+  --shadow-lg: 0 12px 32px rgba(0,0,0,.5);
+
+  /* 动画 */
+  --ease: cubic-bezier(.4, 0, .2, 1);
+  --dur-fast: .12s;
+  --dur: .2s;
+
+  /* 字体 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+             "PingFang SC", "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Consolas", "SF Mono", monospace;
+
+  /* 尺寸 */
+  --nav-width: 220px;
+  --topbar-height: 52px;
+}
+
+/* ==========================================================================
+   Reset
+   ========================================================================== */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-base);
+  color: var(--text-primary);
+  background: var(--bg-base);
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+button { cursor: pointer; border: none; background: none; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 5px;
+  border: 2px solid var(--bg-base);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* 文本辅助 */
+.text-secondary { color: var(--text-secondary); }
+.text-muted     { color: var(--text-muted); }
+.text-success   { color: var(--success); }
+.text-warning   { color: var(--warning); }
+.text-danger    { color: var(--danger); }
+.text-accent    { color: var(--accent); }
+.mono           { font-family: var(--font-mono); }

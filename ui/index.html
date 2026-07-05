@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Shield GUI</title>
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/layout.css">
+  <link rel="stylesheet" href="styles/components.css">
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- 左侧导航 -->
+    <aside class="nav">
+      <div class="nav-brand">
+        <div class="nav-brand-logo">🛡</div>
+        <div class="nav-brand-text">
+          <div class="nav-brand-name">Shield GUI</div>
+          <div class="nav-brand-sub" id="nav-version">v—</div>
+        </div>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-title">概览</div>
+        <button class="nav-item" data-route="dashboard">
+          <span class="nav-item-icon">📊</span><span class="nav-item-label">仪表盘</span>
+        </button>
+        <button class="nav-item" data-route="sessions">
+          <span class="nav-item-icon">🟢</span><span class="nav-item-label">活动会话</span>
+          <span class="nav-item-badge hidden" id="nav-sessions-badge">0</span>
+        </button>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-title">使用模式</div>
+        <button class="nav-item" data-route="tunnel-new">
+          <span class="nav-item-icon">⚡</span><span class="nav-item-label">新建隧道</span>
+        </button>
+        <button class="nav-item" data-route="presets">
+          <span class="nav-item-icon">📑</span><span class="nav-item-label">连接预设</span>
+        </button>
+        <button class="nav-item" data-route="service">
+          <span class="nav-item-icon">⚙️</span><span class="nav-item-label">系统服务</span>
+        </button>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-title">协议指南</div>
+        <button class="nav-item" data-route="protocols">
+          <span class="nav-item-icon">🌐</span><span class="nav-item-label">协议总览</span>
+        </button>
+      </div>
+
+      <div class="nav-section">
+        <div class="nav-section-title">扩展与管理</div>
+        <button class="nav-item" data-route="plugins">
+          <span class="nav-item-icon">🧩</span><span class="nav-item-label">插件管理</span>
+        </button>
+        <button class="nav-item" data-route="credentials">
+          <span class="nav-item-icon">🔑</span><span class="nav-item-label">凭证与安全</span>
+        </button>
+        <button class="nav-item" data-route="settings">
+          <span class="nav-item-icon">🔧</span><span class="nav-item-label">应用配置</span>
+        </button>
+      </div>
+
+      <div class="nav-footer" id="nav-footer">
+        未检测到 Shield CLI
+      </div>
+    </aside>
+
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="topbar-title">
+        <span id="topbar-title">仪表盘</span>
+        <span class="topbar-subtitle" id="topbar-subtitle"></span>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-sm" id="btn-open-webui" title="打开 Shield 官方 Web UI">
+          🌐 Web UI
+        </button>
+        <button class="btn btn-primary btn-sm" id="btn-quick-connect" title="新建隧道">
+          ⚡ 新建隧道
+        </button>
+      </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="main">
+      <div id="view-root"></div>
+    </main>
+  </div>
+
+  <!-- Toast 容器 -->
+  <div class="toast-stack" id="toast-stack"></div>
+
+  <!-- 脚本 -->
+  <script src="app.js"></script>
+  <script src="views/dashboard.js"></script>
+  <script src="views/tunnel-new.js"></script>
+  <script src="views/presets.js"></script>
+  <script src="views/sessions.js"></script>
+  <script src="views/protocols.js"></script>
+  <script src="views/plugins.js"></script>
+  <script src="views/service.js"></script>
+  <script src="views/credentials.js"></script>
+  <script src="views/settings.js"></script>
+</body>
+</html>

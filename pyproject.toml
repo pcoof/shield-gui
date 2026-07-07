@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13.5"
 dependencies = [
     "pywebview>=6.2.1",
+    "pystray>=0.19.5",
+    "Pillow>=11.0.0",
 ]
 
 

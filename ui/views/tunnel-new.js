@@ -188,7 +188,22 @@ const TunnelForm = {
 
   _mount_tunnel_new() {
     this.renderProtocolGrid();
-    this.select('ssh');
+    // 检查是否有待填充的内置预设
+    const preset = State.pendingPreset;
+    if (preset) {
+      State.pendingPreset = null; // 消费掉
+      this.select(preset.protocol);
+      if (preset.target) {
+        document.getElementById('f-target').value = preset.target;
+      }
+      if (preset.display_name) {
+        document.getElementById('f-display').value = preset.display_name;
+      }
+      this.updatePreview();
+      toast(`已加载预设: ${preset.protocol} → ${preset.target || '默认'}`, 'info');
+    } else {
+      this.select('ssh');
+    }
   },
 
   renderProtocolGrid() {
@@ -253,9 +268,14 @@ const TunnelForm = {
   collect() {
     const v = id => (document.getElementById(id)?.value || '').trim();
     const cb = id => document.getElementById(id)?.checked || false;
+    let target = v('f-target');
+    // 仅输入纯数字端口时补上 127.0.0.1:
+    if (/^\d+$/.test(target)) {
+      target = '127.0.0.1:' + target;
+    }
     return {
       protocol: this.protocol,
-      target: v('f-target'),
+      target: target,
       display_name: v('f-display'),
       username: v('f-username'),
       auth_pass: v('f-authpass'),

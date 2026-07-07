@@ -32,6 +32,145 @@ const Shield = {
 // pywebview 加载完成的官方事件
 window.addEventListener('pywebviewready', () => { Shield._ready = true; });
 
+// ---------- 自定义标题栏控制 ----------
+const TitleBar = {
+  // 拖拽
+  _dragging: false,
+  _lastX: 0,
+  _lastY: 0,
+  _lastCall: 0,
+  // 边缘 resize
+  _resizing: false,
+  _resizeEdge: '',
+  _startBounds: null,
+  _startMouseX: 0,
+  _startMouseY: 0,
+
+  startDrag(e) {
+    this._dragging = true;
+    this._lastX = e.screenX;
+    this._lastY = e.screenY;
+  },
+
+  startResize(e) {
+    const edge = e.currentTarget.dataset.edge;
+    if (!edge) return;
+    this._resizing = true;
+    this._resizeEdge = edge;
+    this._startMouseX = e.screenX;
+    this._startMouseY = e.screenY;
+    // 冻结当前 bounds 避免重复查询
+    Shield.call('window_get_bounds').then(b => { this._startBounds = b; });
+    e.preventDefault();
+  },
+
+  /** 限频 ~60fps，返回 true = 可以执行 */
+  _passThrottle() {
+    const now = Date.now();
+    if (now - this._lastCall < 16) return false;
+    this._lastCall = now;
+    return true;
+  },
+
+  onMouseMove(e) {
+    if (!this._resizing && !this._dragging) return;
+    e.preventDefault();
+    if (!this._passThrottle()) return;
+
+    if (this._resizing) {
+      const b = this._startBounds;
+      if (!b) return;
+      const edge = this._resizeEdge;
+      const dx = e.screenX - this._startMouseX;
+      const dy = e.screenY - this._startMouseY;
+
+      let x = b.x, y = b.y, w = b.w, h = b.h;
+      if (edge.includes('t')) { y = b.y + dy; h = b.h - dy; }
+      if (edge.includes('b')) { h = b.h + dy; }
+      if (edge.includes('l')) { x = b.x + dx; w = b.w - dx; }
+      if (edge.includes('r')) { w = b.w + dx; }
+
+      Shield.call('window_set_bounds', x, y, w, h);
+      return;
+    }
+
+    // 拖拽
+    const dx = e.screenX - this._lastX;
+    const dy = e.screenY - this._lastY;
+    if (dx === 0 && dy === 0) return;
+    this._lastX = e.screenX;
+    this._lastY = e.screenY;
+    Shield.call('window_move_by', dx, dy);
+  },
+
+  stopDrag() {
+    this._dragging = false;
+    this._resizing = false;
+    this._startBounds = null;
+  },
+
+  minimize() { Shield.call('window_minimize'); },
+  maximize() { Shield.call('window_maximize'); },
+  close()    { Shield.call('window_close'); },
+
+  openGitHub() {
+    window.open('https://github.com/pcoof/shield-gui', '_blank');
+  },
+
+  async downloadGUIUpdate() {
+    try {
+      const res = await Shield.call('check_updates');
+      const info = res && res.gui;
+      if (info && info.download_url) {
+        Shield.call('open_web_ui', 0);
+        toast('已打开 GitHub Release 页', 'info');
+        window.open(info.release_url || info.download_url, '_blank');
+      } else {
+        toast('暂无可用更新', 'info');
+      }
+    } catch (e) {
+      toast('检查更新失败: ' + e.message, 'error');
+    }
+  },
+
+  async downloadShieldUpdate() {
+    try {
+      const res = await Shield.call('check_updates');
+      const info = res && res.shield;
+      if (info && info.download_url) {
+        window.open(info.download_url, '_blank');
+        toast('已打开下载页', 'info');
+      } else {
+        toast('暂无可用更新', 'info');
+      }
+    } catch (e) {
+      toast('检查更新失败: ' + e.message, 'error');
+    }
+  },
+
+  async checkForUpdates() {
+    try {
+      const res = await Shield.call('check_updates');
+      if (!res) return;
+      // GUI 更新按钮
+      const guiBtn = document.getElementById('btn-gui-update');
+      if (guiBtn && res.gui && res.gui.has_update) {
+        guiBtn.textContent = `⬆ GUI v${res.gui.latest_version}`;
+        guiBtn.classList.remove('hidden');
+      }
+      // Shield CLI 更新按钮
+      const shieldBtn = document.getElementById('btn-shield-update');
+      if (shieldBtn && res.shield && res.shield.has_update) {
+        shieldBtn.textContent = `⬆ CLI v${res.shield.latest_version}`;
+        shieldBtn.classList.remove('hidden');
+      }
+    } catch (e) {
+      // 静默失败，不影响主流程
+      console.warn('update check failed', e);
+    }
+  }
+};
+
 // ---------- 全局状态 ----------
 const State = {
   env: null,            // get_env() 返回值
@@ -39,6 +178,7 @@ const State = {
   sessions: [],         // 活动会话
   pollTimer: null,      // 会话轮询定时器
   currentRoute: null,
+  pendingPreset: null,  // 待填充的预设（内置常用端口预设用）
 };
 
 // ---------- 路由表 ----------
@@ -51,6 +191,7 @@ const ROUTES = {
   plugins:    { title: '插件管理',       subtitle: '扩展协议支持',         render: () => Views.plugins() },
   service:    { title: '系统服务',       subtitle: '安装/启停/卸载',       render: () => Views.service() },
   credentials:{ title: '凭证与安全',     subtitle: '凭证管理与访问模式',   render: () => Views.credentials() },
+  backup:     { title: '备份恢复',       subtitle: '本地/远程/定时备份',  render: () => Views.backup() },
   settings:   { title: '应用配置',       subtitle: '自定义服务器/缓存',    render: () => Views.settings() },
 };
 
@@ -189,8 +330,44 @@ async function refreshSessions() {
   } catch (e) { /* 静默 */ }
 }
 
+// ---------- 填充预设到新建隧道页（内置常用端口用） ----------
+function fillPreset(protocol, target, displayName) {
+  State.pendingPreset = { protocol, target, display_name: displayName };
+  navigate('tunnel-new');
+}
+
+// ---------- 最大化状态检测 ----------
+function checkMaximized() {
+  // 当窗口外宽≈屏幕宽时判定为最大化
+  const isMax = window.outerWidth >= screen.width && window.outerHeight >= screen.height;
+  document.body.classList.toggle('is-maximized', isMax);
+}
+
 // ---------- 启动 ----------
 async function boot() {
+  // 最大化检测 + 窗口 resize 时重新检测
+  checkMaximized();
+  window.addEventListener('resize', checkMaximized);
+
+  // 标题栏拖拽（mousedown → mousemove → mouseup）
+  const dragEl = document.getElementById('titlebar-drag');
+  if (dragEl) {
+    dragEl.addEventListener('mousedown', (e) => {
+      const tag = e.target.tagName;
+      if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'A' || tag === 'SELECT') return;
+      TitleBar.startDrag(e);
+      // 阻止选中文本
+      e.preventDefault();
+    });
+  }
+  document.addEventListener('mousemove', (e) => TitleBar.onMouseMove(e));
+  document.addEventListener('mouseup', () => TitleBar.stopDrag());
+
+  // 边缘 resize 手柄绑定
+  document.querySelectorAll('.resize-handle').forEach(el => {
+    el.addEventListener('mousedown', (e) => TitleBar.startResize(e));
+  });
+
   // 绑定导航点击
   document.querySelectorAll('.nav-item').forEach(el => {
     el.addEventListener('click', () => navigate(el.dataset.route));
@@ -209,9 +386,16 @@ async function boot() {
   // 检测环境
   try {
     State.env = await Shield.call('get_env');
+    // 更新标题栏版本号
+    const guiVerEl = document.getElementById('titlebar-version');
+    const guiVersion = State.env.gui_version || '1.0.0';
+    if (guiVerEl) guiVerEl.textContent = 'v' + guiVersion;
+
     if (!State.env.installed) {
       document.getElementById('nav-footer').innerHTML =
         '<span class="text-danger">⚠ 未找到 shield.exe</span>';
+      // 即使未安装也检测 GUI 更新
+      TitleBar.checkForUpdates();
       navigate('dashboard');
       return;
     }
@@ -235,6 +419,9 @@ async function boot() {
 
   navigate('dashboard');
   startSessionPolling();
+
+  // 延迟检测更新（避免启动时并发请求过多）
+  setTimeout(() => TitleBar.checkForUpdates(), 3000);
 }
 
 // 视图容器（各 views 文件往里塞方法）

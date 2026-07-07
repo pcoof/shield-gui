@@ -3,7 +3,7 @@ Views.sessions = function () {
   return `
     <div class="view-header">
       <h1 class="view-title">活动会话</h1>
-      <p class="view-desc">查看运行中的隧道、实时日志、Access URL，可一键停止</p>
+      <p class="view-desc">查看运行中的隧道、实时日志、Access URL，可一键停止/重启</p>
     </div>
 
     <div class="flex justify-between items-center mb-4">
@@ -56,6 +56,7 @@ Views._refresh_sessions = function () {
 };
 
 Views._renderSession = function (s) {
+  const isStopped = s.status === 'stopped' || s.status === 'error';
   const statusBadge = {
     running:  '<span class="badge badge-success"><span class="dot dot-pulse"></span>运行中</span>',
     starting: '<span class="badge badge-warning"><span class="dot dot-pulse"></span>启动中</span>',
@@ -77,9 +78,13 @@ Views._renderSession = function (s) {
           <span class="text-muted text-xs">PID ${s.pid || '—'} · ${dur}</span>
         </div>
         <div class="flex gap-2">
-          ${url ? `<button class="btn btn-sm btn-info" onclick="Shield.call('open_web_ui',0).then(()=>{})">🌐 访问</button>` : ''}
+          ${url ? `<button class="btn btn-sm btn-info" onclick="window.open('${escapeAttr(url)}','_blank')">🌐 访问</button>` : ''}
           ${url ? `<button class="btn btn-sm" onclick="copyText('${escapeAttr(url)}')">📋 复制 URL</button>` : ''}
-          <button class="btn btn-sm btn-danger" onclick="Views._stopSession('${s.session_id}')">⏹ 停止</button>
+          <button class="btn btn-sm" onclick="Views._editSession('${s.session_id}')">✏️ 编辑</button>
+          ${isStopped
+            ? `<button class="btn btn-sm btn-primary" onclick="Views._restartSession('${s.session_id}')">▶ 启动</button>`
+            : `<button class="btn btn-sm btn-danger" onclick="Views._stopSession('${s.session_id}')">⏹ 停止</button>`
+          }
           <button class="btn btn-sm btn-ghost" onclick="Views._removeSession('${s.session_id}')">✕</button>
         </div>
       </div>
@@ -91,6 +96,32 @@ Views._renderSession = function (s) {
       <div class="terminal" id="log-${s.session_id}" style="max-height:240px;min-height:60px">等待日志…</div>
     </div>
   `;
+};
+
+Views._editSession = async function (sid) {
+  try {
+    const sess = await Shield.call('get_session', sid);
+    if (!sess) { toast('无法获取会话信息', 'error'); return; }
+    // 预填到隧道新建表单
+    State.pendingPreset = {
+      protocol: sess.protocol,
+      target: sess.target,
+      display_name: sess.display_name,
+    };
+    navigate('tunnel-new');
+  } catch (e) {
+    toast('获取会话信息失败: ' + e.message, 'error');
+  }
+};
+
+Views._restartSession = async function (sid) {
+  const res = await Shield.call('restart_session', sid);
+  if (res.session_id) {
+    toast('会话已重新启动', 'success');
+    refreshSessions();
+  } else {
+    toast('启动失败: ' + (res.error || ''), 'error');
+  }
 };
 
 Views._pollSessionLog = function (sid) {
@@ -115,10 +146,6 @@ Views._pollSessionLog = function (sid) {
       term.textContent = '（暂无输出）';
     }
     Views._logOffsets[sid] = res.total;
-    // 若有新 URL，更新头部
-    if (res.access_urls && res.access_urls.length > 0) {
-      // 让下一次 refreshSessions 处理 URL 显示
-    }
   }).catch(()=>{});
 };
 

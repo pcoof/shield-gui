@@ -55,6 +55,10 @@ Views.settings = function () {
             <input type="checkbox" id="set-autostart-sessions">
             启动后自动恢复活动会话
           </label>
+          <label class="checkbox">
+            <input type="checkbox" id="set-tray-enabled" checked>
+            启用系统托盘（关闭窗口时隐藏到托盘）
+          </label>
         </div>
         <button class="btn btn-primary btn-sm mt-4" onclick="Views._saveSettings()">💾 保存</button>
       </div>
@@ -100,6 +104,9 @@ Views._mount_settings = async function () {
     document.getElementById('set-invisible').checked = !!s.invisible;
     document.getElementById('set-verbose').checked = !!s.verbose;
     document.getElementById('set-autostart-sessions').checked = !!s.autostart_sessions;
+    // tray_enabled 默认 true，只有明确 false 才取消勾选
+    const trayEl = document.getElementById('set-tray-enabled');
+    if (s.tray_enabled === false) trayEl.checked = false;
   } catch {}
   // 填充关于信息
   if (State.env) {
@@ -117,6 +124,7 @@ Views._saveSettings = async function () {
     invisible: document.getElementById('set-invisible').checked,
     verbose: document.getElementById('set-verbose').checked,
     autostart_sessions: document.getElementById('set-autostart-sessions').checked,
+    tray_enabled: document.getElementById('set-tray-enabled').checked,
   };
   const ok = await Shield.call('save_settings', settings);
   toast(ok ? '设置已保存' : '保存失败', ok ? 'success' : 'error');

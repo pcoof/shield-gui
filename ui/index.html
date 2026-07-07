@@ -9,10 +9,43 @@
 </head>
 <body>
   <div class="app" id="app">
-    <!-- 左侧导航 -->
-    <aside class="nav">
+    <!-- ========== 自定义标题栏 ========== -->
+    <header class="titlebar" id="titlebar">
+      <div class="titlebar-drag" id="titlebar-drag">
+        <div class="titlebar-brand">
+          <span class="titlebar-icon">🛡</span>
+          <span class="titlebar-name">Shield GUI</span>
+          <span class="titlebar-version" id="titlebar-version"></span>
+        </div>
+        <div class="titlebar-updates" id="titlebar-updates">
+          <button class="titlebar-update-btn gui-update hidden" id="btn-gui-update"
+                  onclick="TitleBar.downloadGUIUpdate()">
+            <span>⬆</span> GUI 更新
+          </button>
+          <button class="titlebar-update-btn shield-update hidden" id="btn-shield-update"
+                  onclick="TitleBar.downloadShieldUpdate()">
+            <span>⬆</span> CLI 更新
+          </button>
+        </div>
+      </div>
+      <div class="titlebar-actions">
+        <a class="titlebar-link" href="https://github.com/pcoof/shield-gui"
+           target="_blank" title="GitHub 仓库"
+           onclick="TitleBar.openGitHub();event.preventDefault()">
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+        </a>
+        <button class="titlebar-btn" onclick="TitleBar.minimize()" title="最小化">─</button>
+        <button class="titlebar-btn" onclick="TitleBar.maximize()" title="最大化">□</button>
+        <button class="titlebar-btn titlebar-close" onclick="TitleBar.close()" title="关闭">✕</button>
+      </div>
+    </header>
+
+    <!-- ========== 左侧导航 ========== -->
+    <aside class="nav" id="nav">
       <div class="nav-brand">
-        <div class="nav-brand-logo">🛡</div>
+        <div class="nav-brand-logo"><img src="assets/app.ico"></div>
         <div class="nav-brand-text">
           <div class="nav-brand-name">Shield GUI</div>
           <div class="nav-brand-sub" id="nav-version">v—</div>
@@ -58,17 +91,20 @@
         <button class="nav-item" data-route="credentials">
           <span class="nav-item-icon">🔑</span><span class="nav-item-label">凭证与安全</span>
         </button>
-        <button class="nav-item" data-route="settings">
-          <span class="nav-item-icon">🔧</span><span class="nav-item-label">应用配置</span>
-        </button>
-      </div>
+          <button class="nav-item" data-route="backup">
+            <span class="nav-item-icon">🔄</span><span class="nav-item-label">备份恢复</span>
+          </button>
+          <button class="nav-item" data-route="settings">
+            <span class="nav-item-icon">🔧</span><span class="nav-item-label">应用配置</span>
+          </button>
+        </div>
 
       <div class="nav-footer" id="nav-footer">
         未检测到 Shield CLI
       </div>
     </aside>
 
-    <!-- 顶栏 -->
+    <!-- ========== 顶栏 ========== -->
     <header class="topbar">
       <div class="topbar-title">
         <span id="topbar-title">仪表盘</span>
@@ -84,7 +120,7 @@
       </div>
     </header>
 
-    <!-- 主内容区 -->
+    <!-- ========== 主内容区 ========== -->
     <main class="main">
       <div id="view-root"></div>
     </main>
@@ -100,9 +136,22 @@
   <script src="views/presets.js"></script>
   <script src="views/sessions.js"></script>
   <script src="views/protocols.js"></script>
+  <!-- ========== 边缘/角部 resize 手柄（frameless 窗口用） ========== -->
+  <!-- 四边 -->
+  <div class="resize-handle edge-t" data-edge="t"></div>
+  <div class="resize-handle edge-b" data-edge="b"></div>
+  <div class="resize-handle edge-l" data-edge="l"></div>
+  <div class="resize-handle edge-r" data-edge="r"></div>
+  <!-- 四角 -->
+  <div class="resize-handle corner-tl" data-edge="tl"></div>
+  <div class="resize-handle corner-tr" data-edge="tr"></div>
+  <div class="resize-handle corner-bl" data-edge="bl"></div>
+  <div class="resize-handle corner-br" data-edge="br"></div>
+
   <script src="views/plugins.js"></script>
   <script src="views/service.js"></script>
   <script src="views/credentials.js"></script>
   <script src="views/settings.js"></script>
+  <script src="views/backup.js"></script>
 </body>
 </html>

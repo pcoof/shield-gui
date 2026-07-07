@@ -1,60 +1,159 @@
 name: Build & Release
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Release version (e.g. v1.0.0)'
-        required: false
-        type: string
 
 permissions:
   contents: write
 
 jobs:
-  build-windows:
+  release:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        python-version: ['3.13']
-
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up Python ${{ matrix.python-version }}
+      # ── 版本号自动计算 ──────────────────────────────────────────
+      # 格式：YYYYMMDD.N  （例如 20260707.1, 20260707.2 ...）
+      # 查询当天已有的 tag，取最大 N 自增 1
+      - name: Calculate version (YYYYMMDD.N)
+        id: version
+        shell: pwsh
+        run: |
+          $datePrefix = Get-Date -Format "yyyyMMdd"
+          $tags = git tag --list "v$datePrefix.*"
+          $maxSuffix = 0
+          if ($tags) {
+            $suffixes = $tags | ForEach-Object {
+              if ($_ -match 'v\d+\.(\d+)$') { [int]$Matches[1] }
+            }
+            if ($suffixes) {
+              $maxSuffix = ($suffixes | Measure-Object -Maximum).Maximum
+            }
+          }
+          $newSuffix = $maxSuffix + 1
+          $newVersion = "$datePrefix.$newSuffix"
+          echo "version=$newVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Output "Computed version: v$newVersion"
+
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.13"
 
-      - name: Install dependencies
+      # ── 更新 pyproject.toml 中的 version（仅本地，构建确认后才提交） ──
+      - name: Update pyproject.toml version
+        shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install pywebview pyinstaller
+          $version = "${{ steps.version.outputs.version }}"
+          (Get-Content pyproject.toml -Raw) -replace '(?m)^version = ".*"', "version = `"$version`"" | Set-Content pyproject.toml -Encoding utf8
+          Write-Output "pyproject.toml version updated to $version"
+
+      # ── 生成 Windows EXE 版本信息（PyInstaller --version-file） ──
+      - name: Generate Windows version info file
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.version.outputs.version }}"
+          $y = $ver.Substring(0,4); $m = $ver.Substring(4,2); $d = $ver.Substring(6,2); $b = $ver.Split('.')[1]
+          $lines = @(
+            "# UTF-8",
+            "VSVersionInfo(",
+            "  ffi=FixedFileInfo(",
+            "    filevers=($y, $m, $d, $b),",
+            "    prodvers=($y, $m, $d, $b),",
+            "    mask=0x3f,",
+            "    flags=0x0,",
+            "    OS=0x40004,",
+            "    fileType=0x1,",
+            "    subtype=0x0,",
+            "    date=(0, 0)",
+            "  ),",
+            "  kids=[",
+            "    StringFileInfo(",
+            "      [",
+            "        StringTable(",
+            "          u'040904B0',",
+            "          [StringStruct(u'FileDescription', u'Shield GUI'),",
+            "          StringStruct(u'FileVersion', u'$ver'),",
+            "          StringStruct(u'InternalName', u'ShieldGUI'),",
+            "          StringStruct(u'LegalCopyright', u'MIT License'),",
+            "          StringStruct(u'OriginalFilename', u'ShieldGUI.exe'),",
+            "          StringStruct(u'ProductName', u'Shield GUI'),",
+            "          StringStruct(u'ProductVersion', u'$ver')])",
+            "      ]),",
+            "    VarFileInfo([VarStruct(u'Translation', [0x0409, 0x04B0])])",
+            "  ]",
+            ")"
+          )
+          $lines | Out-File -FilePath file_version_info.txt -Encoding utf8
+          Write-Output "Generated file_version_info.txt"
+
+      # ── 先安装依赖 + 构建，确认产物正常 ──────────────────────────
+      - name: Install uv
+        run: pip install uv
+
+      - name: Install dependencies with uv
+        run: |
+          uv pip install --system pywebview pyinstaller
 
       - name: Build with PyInstaller
         run: |
           pyinstaller --onefile --windowed --name "ShieldGUI" `
             --add-data "ui;ui" `
+            --add-data "pyproject.toml;." `
             --hidden-import webview `
             --hidden-import webview.platforms.win32_edge `
+            --icon ui\assets\app.ico `
+            --version-file file_version_info.txt `
             main.py
 
-      - name: Upload artifact
+      - name: Package ZIP artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist-zip -Force
+          Copy-Item -LiteralPath "dist\ShieldGUI.exe" -Destination "dist-zip\ShieldGUI.exe" -Force
+          Compress-Archive -Path "dist-zip\*" -DestinationPath "dist\ShieldGUI.zip" -Force
+
+      - name: Upload artifact (EXE)
         uses: actions/upload-artifact@v4
         with:
-          name: ShieldGUI-windows-${{ matrix.python-version }}
+          name: ShieldGUI-windows-py313
           path: dist/ShieldGUI.exe
 
+      - name: Upload artifact (ZIP)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ShieldGUI-portable-py313
+          path: dist/ShieldGUI.zip
+
+      # ── 构建成功后才提交版本 + 打 Git Tag + Release ──────────────
+      - name: Commit version bump and tag
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $branch = "${{ github.ref_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore: bump version to v$version"
+          git tag "v$version"
+          git push origin HEAD:$branch
+          git push origin "v$version"
+          Write-Output "Committed and pushed tag v$version"
+
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
-          name: Shield GUI ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Shield GUI v${{ steps.version.outputs.version }}
+          body: |
+            ## Shield GUI v${{ steps.version.outputs.version }}
+
+            Release auto-generated from workflow dispatch.
           draft: false
           prerelease: false
-          files: dist/ShieldGUI.exe
+          files: |
+            dist/ShieldGUI.exe
+            dist/ShieldGUI.zip
           fail_on_unmatched_files: true

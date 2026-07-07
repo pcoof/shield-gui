@@ -16,8 +16,33 @@ import webbrowser
 import zipfile
 from typing import Any, Optional
 
+import json
+from datetime import datetime
+from core.backup import BackupManager
 from core.config_store import ConfigStore
 from core.shield_runner import ShieldRunner
+
+# 本 GUI 版本号（用于更新检测）
+def _read_gui_version() -> str:
+    """从 pyproject.toml 读取版本号，避免硬编码。
+    兼容源码运行（core/../pyproject.toml）和 PyInstaller 打包运行（sys._MEIPASS）。"""
+    try:
+        # PyInstaller 打包后资源在 sys._MEIPASS 下
+        base = getattr(sys, '_MEIPASS', None)
+        if not base:
+            # 源码运行：api.py 在 core/ 下
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        pp = os.path.join(base, 'pyproject.toml')
+        if os.path.isfile(pp):
+            with open(pp, encoding='utf-8') as f:
+                m = re.search(r'^version\s*=\s*"(.+?)"', f.read(), re.M)
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+    return "0.0.0"
+
+GUI_VERSION = _read_gui_version()
 
 # 协议元信息（端口、是否需要认证、说明）
 PROTOCOLS = {
@@ -44,6 +69,8 @@ class PythonApi:
         # Web UI 后台进程管理（shield start 长驻进程）
         self._web_ui_process: Optional[subprocess.Popen] = None
         self._web_ui_lock = threading.Lock()
+        self._window_visible = True  # 手动追踪，比 _window.hidden 更可靠
+        self._backup_mgr = BackupManager(on_notify=self._backup_notify)
 
     def attach_window(self, window) -> None:
         self._window = window
@@ -53,7 +80,7 @@ class PythonApi:
     def get_env(self) -> dict:
         """返回 shield 路径、版本、官方配置目录、可用协议。"""
         if not self.shield_exe:
-            return {"installed": False, "error": "未找到 shield.exe"}
+            return {"installed": False, "error": "未找到 shield.exe", "gui_version": GUI_VERSION}
         version = ""
         # shield 用 --version flag 输出版本（裸 `version` 子命令会报错）
         ver_res = self.runner.run_cli(["--version"], timeout=10)
@@ -70,9 +97,218 @@ class PythonApi:
             "installed": True,
             "path": self.shield_exe,
             "version": version,
+            "gui_version": GUI_VERSION,
             "config": self.store.status() if self.store else None,
             "protocols": PROTOCOLS,
         }
+
+    # ---------- 更新检测 ----------
+
+    def check_updates(self) -> dict:
+        """检测 GUI 和 Shield CLI 是否有新版本。
+        返回：
+          gui: { has_update, latest_version, download_url }
+          shield: { has_update, latest_version, download_url }
+        """
+        result = {
+            "gui": {"has_update": False, "latest_version": "", "download_url": ""},
+            "shield": {"has_update": False, "latest_version": "", "download_url": ""},
+        }
+        # 检测 GUI 更新（shield-gui GitHub Release）
+        try:
+            req = urllib.request.Request(
+                "https://api.github.com/repos/pcoof/shield-gui/releases/latest",
+                headers={"User-Agent": "ShieldGUI", "Accept": "application/vnd.github+json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                latest = data.get("tag_name", "").lstrip("v")
+                current = GUI_VERSION
+                if latest and _compare_versions(latest, current) > 0:
+                    zip_url = ""
+                    for asset in data.get("assets", []):
+                        if asset.get("name", "").endswith(".exe") or asset.get("name") == "ShieldGUI.exe":
+                            zip_url = asset.get("browser_download_url", "")
+                            break
+                    result["gui"] = {
+                        "has_update": True,
+                        "latest_version": latest,
+                        "current_version": current,
+                        "download_url": zip_url or data.get("html_url", ""),
+                        "release_url": data.get("html_url", ""),
+                    }
+        except Exception:
+            pass
+        # 检测 Shield CLI 更新
+        try:
+            current_shield = ""
+            if self.shield_exe:
+                ver_res = self.runner.run_cli(["--version"], timeout=5)
+                for line in (ver_res.get("stdout", "") + ver_res.get("stderr", "")).splitlines():
+                    m = re.search(r"(\d+\.\d+\.\d+)", line)
+                    if m:
+                        current_shield = m.group(1)
+                        break
+            req = urllib.request.Request(
+                "https://api.github.com/repos/fengyily/shield-cli/releases/latest",
+                headers={"User-Agent": "ShieldGUI", "Accept": "application/vnd.github+json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+                latest = data.get("tag_name", "").lstrip("v")
+                if current_shield and latest and _compare_versions(latest, current_shield) > 0:
+                    zip_url = ""
+                    for asset in data.get("assets", []):
+                        name = asset.get("name", "")
+                        if "windows" in name.lower() and name.endswith(".zip"):
+                            zip_url = asset.get("browser_download_url", "")
+                            break
+                    result["shield"] = {
+                        "has_update": True,
+                        "latest_version": latest,
+                        "current_version": current_shield,
+                        "download_url": zip_url or "",
+                        "release_url": data.get("html_url", ""),
+                    }
+        except Exception:
+            pass
+        return result
+
+    def get_gui_version(self) -> str:
+        return GUI_VERSION
+
+    # ---------- 窗口控制（frameless 模式） ----------
+
+    def window_minimize(self) -> None:
+        if self._window:
+            try:
+                self._window.minimize()
+            except Exception:
+                pass
+
+    def window_maximize(self) -> None:
+        if self._window:
+            try:
+                self._window.toggle_fullscreen()
+            except Exception:
+                pass
+
+    def window_restore(self) -> None:
+        if self._window:
+            try:
+                self._window.restore()
+            except Exception:
+                pass
+
+    def window_close(self) -> None:
+        """关闭按钮 → 若托盘启用则隐藏到托盘，否则真正关闭。"""
+        if not self._window:
+            return
+        try:
+            # 读取设置，判断托盘是否启用（默认启用）
+            settings = self.load_settings()
+            if settings.get("tray_enabled", True):
+                self._window.hide()
+            else:
+                self._window.destroy()
+        except Exception:
+            pass
+
+    def window_quit(self) -> None:
+        """真正退出程序（从托盘菜单调用）。"""
+        if self._window:
+            try:
+                self._window.destroy()
+            except Exception:
+                pass
+
+    def window_show(self) -> None:
+        """显示窗口（从托盘恢复）。"""
+        self._window_visible = True
+        if self._window:
+            try:
+                self._window.show()
+                self._window.restore()
+            except Exception:
+                pass
+
+    def window_hide(self) -> None:
+        """隐藏窗口到托盘。"""
+        self._window_visible = False
+        if self._window:
+            try:
+                self._window.hide()
+            except Exception:
+                pass
+
+    def window_is_visible(self) -> bool:
+        """窗口是否可见（基于手动追踪标记，比 _window.hidden 更可靠）。"""
+        return self._window_visible
+
+    def _toggle_window(self) -> None:
+        """切换窗口显示/隐藏（供 TrayManager 调用）。"""
+        if self._window_visible:
+            self.window_hide()
+        else:
+            self.window_show()
+
+    def _ensure_visible(self) -> None:
+        """确保窗口可见并前置（托盘菜单操作前调用）。"""
+        if not self._window_visible:
+            self.window_show()
+
+    def navigate_view(self, route: str) -> None:
+        """让前端导航到指定路由（托盘菜单快速跳转用）。"""
+        if self._window:
+            try:
+                self._window.evaluate_js(f"navigate('{route}')")
+            except Exception:
+                pass
+
+    def _backup_notify(self, level: str, msg: str) -> None:
+        """BackupManager 回调，向前端发送 toast 通知。"""
+        if self._window:
+            try:
+                safe = msg.replace("'", "\\'")
+                self._window.evaluate_js(f"toast('{safe}', '{level}')")
+            except Exception:
+                pass
+
+    def window_move_by(self, dx: int, dy: int) -> None:
+        """相对移动窗口（用于前端 mousemove 拖拽）。"""
+        if not self._window:
+            return
+        try:
+            x, y = self._window.x, self._window.y
+            self._window.move(x + dx, y + dy)
+        except Exception:
+            pass
+
+    def window_get_bounds(self) -> dict:
+        """返回窗口位置和尺寸 {x, y, w, h}。"""
+        if not self._window:
+            return {"x": 0, "y": 0, "w": 1024, "h": 680}
+        try:
+            return {
+                "x": self._window.x,
+                "y": self._window.y,
+                "w": self._window.width,
+                "h": self._window.height,
+            }
+        except Exception:
+            return {"x": 0, "y": 0, "w": 1024, "h": 680}
+
+    def window_set_bounds(self, x: int, y: int, w: int, h: int) -> None:
+        """设置窗口位置和尺寸（带最小尺寸约束）。"""
+        if not self._window:
+            return
+        try:
+            w = max(1024, int(w))
+            h = max(680, int(h))
+            self._window.move(int(x), int(y))
+            self._window.resize(w, h)
+        except Exception:
+            pass
 
     def ensure_config_dir(self) -> dict:
         """首次运行触发：跑一次 shield plugin list 触发生成官方配置目录。"""
@@ -130,6 +366,24 @@ class PythonApi:
 
     def poll_log(self, sid: str, offset: int = 0) -> dict:
         return self.runner.poll_log(sid, offset) if self.runner else {"exists": False}
+
+    def get_session(self, sid: str) -> dict | None:
+        """获取单个会话详情（含 argv）。"""
+        sess = self.runner.get_session(sid) if self.runner else None
+        return sess.to_dict() if sess else None
+
+    def restart_session(self, sid: str) -> dict:
+        """重启已停止的会话（复用原 argv）。"""
+        if not self.runner:
+            return {"error": "runner 未就绪"}
+        sess = self.runner.get_session(sid)
+        if not sess:
+            return {"error": "会话不存在"}
+        if sess.status not in ("stopped", "error"):
+            return {"error": "仅允许重启已停止的会话"}
+        return self.start_tunnel_by_argv(
+            sess.argv, sess.protocol, sess.target, sess.display_name,
+        )
 
     # ---------- 一次性命令 ----------
 
@@ -415,6 +669,55 @@ class PythonApi:
     def save_settings(self, settings: dict) -> bool:
         return self.store.save_settings(settings) if self.store else False
 
+    # ---------- 备份恢复 ----------
+
+    def backup_list(self, backup_dir: str = "") -> list:
+        bm = BackupManager()
+        return bm.list_backups(backup_dir or None)
+
+    def backup_create(self, backup_dir: str = "") -> dict:
+        bm = BackupManager()
+        return bm.create_backup(backup_dir or None)
+
+    def backup_restore(self, zip_path: str) -> dict:
+        bm = BackupManager()
+        return bm.restore_backup(zip_path)
+
+    def backup_delete(self, zip_path: str) -> dict:
+        bm = BackupManager()
+        return bm.delete_backup(zip_path)
+
+    def backup_get_paths(self) -> dict:
+        bm = BackupManager()
+        return {
+            "default_dir": bm.get_default_backup_dir(),
+            "shield_apps": bm.get_shield_apps_path(),
+            "sources": bm.get_source_paths(),
+        }
+
+    def backup_webdav_upload(self, local_path: str, config: dict) -> dict:
+        bm = BackupManager()
+        return bm.webdav_upload(local_path, config)
+
+    def backup_webdav_download(self, filename: str, local_dir: str, config: dict) -> dict:
+        bm = BackupManager()
+        return bm.webdav_download(filename, local_dir, config)
+
+    def backup_webdav_list(self, config: dict) -> list:
+        bm = BackupManager()
+        return bm.webdav_list(config)
+
+    def backup_scheduler_start(self, interval_min: int,
+                                backup_dir: str = "",
+                                webdav_config: dict | None = None) -> None:
+        self._backup_mgr.scheduler_start(interval_min, backup_dir or None, webdav_config)
+
+    def backup_scheduler_stop(self) -> None:
+        self._backup_mgr.scheduler_stop()
+
+    def backup_scheduler_status(self) -> dict:
+        return self._backup_mgr.scheduler_status()
+
     # ---------- 文件对话框 ----------
 
     def pick_private_key(self) -> str:
@@ -474,6 +777,9 @@ def _build_argv(params: dict) -> list:
 
     target = (params.get("target") or "").strip()
     if target:
+        # 如果只输入了纯数字端口，补上 127.0.0.1:
+        if re.match(r"^\d+$", target):
+            target = f"127.0.0.1:{target}"
         argv.append(target)
     elif proto in PROTOCOLS and PROTOCOLS[proto]["port"]:
         # 省略 target → shield 默认 127.0.0.1:标准端口，无需传参
@@ -522,3 +828,24 @@ def _build_argv(params: dict) -> list:
         argv.append("--verbose")
 
     return argv
+
+
+def _compare_versions(v1: str, v2: str) -> int:
+    """比较两个语义化版本号。返回 1 (v1>v2), -1 (v1<v2), 0 (相等)。"""
+    def parse(v: str):
+        parts = []
+        for p in v.split("."):
+            try:
+                parts.append(int(re.search(r"\d+", p).group()))
+            except (AttributeError, ValueError):
+                parts.append(0)
+        while len(parts) < 3:
+            parts.append(0)
+        return parts[:3]
+    a, b = parse(v1), parse(v2)
+    for i in range(3):
+        if a[i] > b[i]:
+            return 1
+        if a[i] < b[i]:
+            return -1
+    return 0

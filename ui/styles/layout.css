@@ -1,15 +1,138 @@
 /* ==========================================================================
-   Shield GUI — 布局（三栏：左侧导航 + 顶栏 + 主内容）
+   Shield GUI — 布局（自定义标题栏 + 三栏：左侧导航 + 顶栏 + 主内容）
    ========================================================================== */
+
+/* ---------- 自定义标题栏 ---------- */
+:root {
+  --titlebar-height: 36px;
+}
+
 .app {
   display: grid;
   grid-template-columns: var(--nav-width) 1fr;
-  grid-template-rows: var(--topbar-height) 1fr;
+  grid-template-rows: var(--titlebar-height) var(--topbar-height) 1fr;
   grid-template-areas:
+    "titlebar titlebar"
     "nav topbar"
     "nav main";
   height: 100vh;
   width: 100vw;
+}
+
+.titlebar {
+  grid-area: titlebar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-default);
+  padding: 0 var(--sp-2) 0 0;
+  user-select: none;
+  z-index: 100;
+}
+.titlebar-drag {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  height: 100%;
+  gap: var(--sp-2);
+  padding-left: var(--sp-3);
+  cursor: default;
+}
+.titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.titlebar-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+.titlebar-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: .3px;
+}
+.titlebar-version {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+}
+
+/* 更新按钮（标题栏内嵌） */
+.titlebar-updates {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  margin-left: var(--sp-3);
+}
+.titlebar-update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--fs-xs);
+  padding: 2px 8px 2px 6px;
+  border-radius: var(--r-sm);
+  color: var(--warning);
+  background: var(--warning-muted);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.titlebar-update-btn:hover {
+  background: rgba(245, 158, 11, 0.25);
+}
+.titlebar-update-btn.shield-update {
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-color: rgba(45, 212, 191, 0.25);
+}
+.titlebar-update-btn.shield-update:hover {
+  background: rgba(45, 212, 191, 0.25);
+}
+
+/* 标题栏右侧：GitHub 图标 + 窗口控制 */
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+}
+.titlebar-link {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 100%;
+  color: var(--text-muted);
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.titlebar-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.titlebar-btn {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 100%;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+.titlebar-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.titlebar-close:hover {
+  background: var(--danger) !important;
+  color: #fff !important;
 }
 
 /* ---------- 左侧导航 ---------- */
@@ -31,15 +154,15 @@
   border-bottom: 1px solid var(--border-muted);
 }
 .nav-brand-logo {
-  width: 30px; height: 30px;
+  width: 30px; max-height: 30px;
   border-radius: var(--r-md);
-  background: linear-gradient(135deg, var(--accent), var(--info));
   display: grid; place-items: center;
   color: var(--text-inverse);
   font-weight: 700;
   font-size: 16px;
   box-shadow: 0 2px 8px var(--accent-muted);
 }
+.nav-brand-logo img{width:100%;height:100%;}
 .nav-brand-text { line-height: 1.15; }
 .nav-brand-name { font-size: var(--fs-md); font-weight: 700; letter-spacing: .3px; }
 .nav-brand-sub  { font-size: var(--fs-xs); color: var(--text-muted); }
@@ -142,3 +265,29 @@
   font-size: var(--fs-sm);
   margin: 0;
 }
+
+/* ========== 最大化适配（frameless 全出血） ========== */
+body.is-maximized .titlebar {
+  /* 最大化时消除 DWM 可能残留的顶部空隙 */
+  padding-top: 0;
+}
+body.is-maximized .app {
+  /* 确保 grid 填满整个视口 */
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ========== 边缘/角部 Resize 手柄 ========== */
+.resize-handle { position: fixed; z-index: 9999; }
+/* 四边：4px 条 */
+.edge-t { top: 0; left: 0; right: 0; height: 4px; cursor: n-resize; }
+.edge-b { bottom: 0; left: 0; right: 0; height: 4px; cursor: s-resize; }
+.edge-l { left: 0; top: 0; bottom: 0; width: 4px; cursor: w-resize; }
+.edge-r { right: 0; top: 0; bottom: 0; width: 4px; cursor: e-resize; }
+/* 四角：16px 方块 */
+.corner-tl { top: 0; left: 0; width: 16px; height: 16px; cursor: nw-resize; }
+.corner-tr { top: 0; right: 0; width: 16px; height: 16px; cursor: ne-resize; }
+.corner-bl { bottom: 0; left: 0; width: 16px; height: 16px; cursor: sw-resize; }
+.corner-br { bottom: 0; right: 0; width: 16px; height: 16px; cursor: se-resize; }
+/* 最大化时隐藏手柄（DWM 不允许拖动） */
+body.is-maximized .resize-handle { display: none; }

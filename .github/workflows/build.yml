@@ -55,7 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $ver = "${{ steps.version.outputs.version }}"
-          $y = $ver.Substring(0,4); $m = $ver.Substring(4,2); $d = $ver.Substring(6,2); $b = $ver.Split('.')[1]
+          $y = [int]$ver.Substring(0,4); $m = [int]$ver.Substring(4,2); $d = [int]$ver.Substring(6,2); $b = [int]$ver.Split('.')[1]
           $lines = @(
             "# UTF-8",
             "VSVersionInfo(",

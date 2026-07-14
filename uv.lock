@@ -302,7 +302,7 @@ wheels = [
 
 [[package]]
 name = "shield-gui"
-version = "20260707.3"
+version = "20260707.4"
 source = { virtual = "." }
 dependencies = [
     { name = "pillow" },

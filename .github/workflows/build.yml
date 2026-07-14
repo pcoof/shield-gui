@@ -42,13 +42,16 @@ jobs:
         with:
           python-version: "3.13"
 
-      # ── 更新 pyproject.toml 中的 version（仅本地，构建确认后才提交） ──
-      - name: Update pyproject.toml version
+      # ── 更新 pyproject.toml 和 api.py 中的版本号 ──────────────────
+      - name: Update version in source files
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
+          # pyproject.toml
           (Get-Content pyproject.toml -Raw) -replace '(?m)^version = ".*"', "version = `"$version`"" | Set-Content pyproject.toml -Encoding utf8
-          Write-Output "pyproject.toml version updated to $version"
+          # api.py 中的 _FALLBACK_VERSION
+          (Get-Content core/api.py -Raw) -replace '(?<=_FALLBACK_VERSION = ")[^"]*', "$version" | Set-Content core/api.py -Encoding utf8
+          Write-Output "Version updated to $version in pyproject.toml and core/api.py"
 
       # ── 生成 Windows EXE 版本信息（PyInstaller --version-file） ──
       - name: Generate Windows version info file

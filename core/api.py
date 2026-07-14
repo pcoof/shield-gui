@@ -3,6 +3,7 @@
 前端通过 window.pywebview.api.<method>(args) 调用。
 所有方法返回 dict/list/str/bool 等可 JSON 序列化的对象。
 """
+
 from __future__ import annotations
 
 import io
@@ -22,38 +23,77 @@ from core.backup import BackupManager
 from core.config_store import ConfigStore
 from core.shield_runner import ShieldRunner
 
+
 # 本 GUI 版本号（用于更新检测）
+# 内置兜底版本号（pyproject.toml 不可读时使用，CI 构建时自动同步）
+_FALLBACK_VERSION = "1.0.0"
+
+
 def _read_gui_version() -> str:
-    """从 pyproject.toml 读取版本号，避免硬编码。
+    """从 pyproject.toml 读取版本号，兜底 _FALLBACK_VERSION。
     兼容源码运行（core/../pyproject.toml）和 PyInstaller 打包运行（sys._MEIPASS）。"""
     try:
-        # PyInstaller 打包后资源在 sys._MEIPASS 下
-        base = getattr(sys, '_MEIPASS', None)
+        base = getattr(sys, "_MEIPASS", None)
         if not base:
-            # 源码运行：api.py 在 core/ 下
             base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        pp = os.path.join(base, 'pyproject.toml')
+        pp = os.path.join(base, "pyproject.toml")
         if os.path.isfile(pp):
-            with open(pp, encoding='utf-8') as f:
+            with open(pp, encoding="utf-8") as f:
                 m = re.search(r'^version\s*=\s*"(.+?)"', f.read(), re.M)
                 if m:
                     return m.group(1)
     except Exception:
         pass
-    return "0.0.0"
+    return _FALLBACK_VERSION
+
 
 GUI_VERSION = _read_gui_version()
 
 # 协议元信息（端口、是否需要认证、说明）
 PROTOCOLS = {
-    "ssh":    {"port": 22,   "auth": True,  "label": "SSH",         "desc": "浏览器中打开完整 SSH 终端，支持私钥/SFTP"},
-    "rdp":    {"port": 3389, "auth": True,  "label": "RDP",         "desc": "浏览器中访问 Windows 远程桌面"},
-    "vnc":    {"port": 5900, "auth": True,  "label": "VNC",         "desc": "浏览器中共享和控制远程桌面屏幕"},
-    "http":   {"port": 80,   "auth": False, "label": "HTTP",        "desc": "将本地/内网 HTTP Web 应用暴露到公网"},
-    "https":  {"port": 443,  "auth": False, "label": "HTTPS",       "desc": "将本地/内网 HTTPS Web 应用暴露到公网"},
-    "telnet": {"port": 23,   "auth": True,  "label": "Telnet",      "desc": "连接网络设备与传统 Telnet 服务"},
-    "tcp":    {"port": 0,    "auth": False, "label": "TCP",         "desc": "TCP 端口代理（MySQL/Redis 等数据库）"},
-    "udp":    {"port": 0,    "auth": False, "label": "UDP",         "desc": "UDP 端口代理（DNS 等）"},
+    "ssh": {
+        "port": 22,
+        "auth": True,
+        "label": "SSH",
+        "desc": "浏览器中打开完整 SSH 终端，支持私钥/SFTP",
+    },
+    "rdp": {
+        "port": 3389,
+        "auth": True,
+        "label": "RDP",
+        "desc": "浏览器中访问 Windows 远程桌面",
+    },
+    "vnc": {
+        "port": 5900,
+        "auth": True,
+        "label": "VNC",
+        "desc": "浏览器中共享和控制远程桌面屏幕",
+    },
+    "http": {
+        "port": 80,
+        "auth": False,
+        "label": "HTTP",
+        "desc": "将本地/内网 HTTP Web 应用暴露到公网",
+    },
+    "https": {
+        "port": 443,
+        "auth": False,
+        "label": "HTTPS",
+        "desc": "将本地/内网 HTTPS Web 应用暴露到公网",
+    },
+    "telnet": {
+        "port": 23,
+        "auth": True,
+        "label": "Telnet",
+        "desc": "连接网络设备与传统 Telnet 服务",
+    },
+    "tcp": {
+        "port": 0,
+        "auth": False,
+        "label": "TCP",
+        "desc": "TCP 端口代理（MySQL/Redis 等数据库）",
+    },
+    "udp": {"port": 0, "auth": False, "label": "UDP", "desc": "UDP 端口代理（DNS 等）"},
 }
 
 # 插件协议（数据库类）
@@ -80,11 +120,17 @@ class PythonApi:
     def get_env(self) -> dict:
         """返回 shield 路径、版本、官方配置目录、可用协议。"""
         if not self.shield_exe:
-            return {"installed": False, "error": "未找到 shield.exe", "gui_version": GUI_VERSION}
+            return {
+                "installed": False,
+                "error": "未找到 shield.exe",
+                "gui_version": GUI_VERSION,
+            }
         version = ""
         # shield 用 --version flag 输出版本（裸 `version` 子命令会报错）
         ver_res = self.runner.run_cli(["--version"], timeout=10)
-        for line in (ver_res.get("stdout", "") + ver_res.get("stderr", "")).splitlines():
+        for line in (
+            ver_res.get("stdout", "") + ver_res.get("stderr", "")
+        ).splitlines():
             line = line.strip()
             # 形如 "shield version 0.3.11"
             if "version" in line.lower() and not line.startswith("Usage"):
@@ -118,7 +164,10 @@ class PythonApi:
         try:
             req = urllib.request.Request(
                 "https://api.github.com/repos/pcoof/shield-gui/releases/latest",
-                headers={"User-Agent": "ShieldGUI", "Accept": "application/vnd.github+json"},
+                headers={
+                    "User-Agent": "ShieldGUI",
+                    "Accept": "application/vnd.github+json",
+                },
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
@@ -127,7 +176,10 @@ class PythonApi:
                 if latest and _compare_versions(latest, current) > 0:
                     zip_url = ""
                     for asset in data.get("assets", []):
-                        if asset.get("name", "").endswith(".exe") or asset.get("name") == "ShieldGUI.exe":
+                        if (
+                            asset.get("name", "").endswith(".exe")
+                            or asset.get("name") == "ShieldGUI.exe"
+                        ):
                             zip_url = asset.get("browser_download_url", "")
                             break
                     result["gui"] = {
@@ -144,19 +196,28 @@ class PythonApi:
             current_shield = ""
             if self.shield_exe:
                 ver_res = self.runner.run_cli(["--version"], timeout=5)
-                for line in (ver_res.get("stdout", "") + ver_res.get("stderr", "")).splitlines():
+                for line in (
+                    ver_res.get("stdout", "") + ver_res.get("stderr", "")
+                ).splitlines():
                     m = re.search(r"(\d+\.\d+\.\d+)", line)
                     if m:
                         current_shield = m.group(1)
                         break
             req = urllib.request.Request(
                 "https://api.github.com/repos/fengyily/shield-cli/releases/latest",
-                headers={"User-Agent": "ShieldGUI", "Accept": "application/vnd.github+json"},
+                headers={
+                    "User-Agent": "ShieldGUI",
+                    "Accept": "application/vnd.github+json",
+                },
             )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode())
                 latest = data.get("tag_name", "").lstrip("v")
-                if current_shield and latest and _compare_versions(latest, current_shield) > 0:
+                if (
+                    current_shield
+                    and latest
+                    and _compare_versions(latest, current_shield) > 0
+                ):
                     zip_url = ""
                     for asset in data.get("assets", []):
                         name = asset.get("name", "")
@@ -347,8 +408,9 @@ class PythonApi:
             self.store.ensure_triggered(self.runner.run_cli)
         return self.runner.start_tunnel(argv, proto, target, display)
 
-    def start_tunnel_by_argv(self, argv: list, protocol: str, target: str,
-                             display_name: str = "") -> dict:
+    def start_tunnel_by_argv(
+        self, argv: list, protocol: str, target: str, display_name: str = ""
+    ) -> dict:
         if not self.runner:
             return {"error": "runner 未就绪"}
         if self.store.status().get("needs_trigger"):
@@ -373,7 +435,7 @@ class PythonApi:
         return sess.to_dict() if sess else None
 
     def restart_session(self, sid: str) -> dict:
-        """重启已停止的会话（复用原 argv）。"""
+        """重启已停止的会话（复用原 argv），成功后移除旧会话避免 UI 多出一行。"""
         if not self.runner:
             return {"error": "runner 未就绪"}
         sess = self.runner.get_session(sid)
@@ -381,9 +443,13 @@ class PythonApi:
             return {"error": "会话不存在"}
         if sess.status not in ("stopped", "error"):
             return {"error": "仅允许重启已停止的会话"}
-        return self.start_tunnel_by_argv(
+        result = self.start_tunnel_by_argv(
             sess.argv, sess.protocol, sess.target, sess.display_name,
         )
+        if result.get("session_id"):
+            # 新会话已创建，移除旧会话让 UI 自然替换
+            self.runner.remove_session(sid)
+        return result
 
     # ---------- 一次性命令 ----------
 
@@ -398,8 +464,8 @@ class PythonApi:
     def plugin_list(self) -> dict:
         """返回结构化插件列表：已安装列表、计数、原始输出。"""
         raw = self.runner.run_cli(["plugin", "list"], timeout=30)
-        stdout = (raw.get("stdout") or "")
-        stderr = (raw.get("stderr") or "")
+        stdout = raw.get("stdout") or ""
+        stderr = raw.get("stderr") or ""
         full = stdout + stderr
         # 解析已安装插件名
         installed = []
@@ -426,11 +492,13 @@ class PythonApi:
             argv += ["--from", from_path]
         raw = self.runner.run_cli(argv, timeout=180)
         # 包装返回，附带结构化信息便于前端展示
-        stdout = (raw.get("stdout") or "")
-        stderr = (raw.get("stderr") or "")
+        stdout = raw.get("stdout") or ""
+        stderr = raw.get("stderr") or ""
         code = raw.get("code", -1)
-        success = code == 0 or any(kw in (stdout + stderr).lower()
-                                   for kw in ["success", "installed", "already", "done"])
+        success = code == 0 or any(
+            kw in (stdout + stderr).lower()
+            for kw in ["success", "installed", "already", "done"]
+        )
         return {
             "code": code,
             "success": success,
@@ -466,7 +534,9 @@ class PythonApi:
         try:
             r = subprocess.run(
                 ["sc", "query", "ShieldCLI"],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
                 creationflags=0x08000000,
             )
             out = r.stdout + r.stderr
@@ -484,9 +554,14 @@ class PythonApi:
         with self._web_ui_lock:
             # 检查是否已在运行
             if self._web_ui_process and self._web_ui_process.poll() is None:
-                return {"code": 0, "message": f"Web UI 已在运行（端口 {port}）", "already_running": True}
+                return {
+                    "code": 0,
+                    "message": f"Web UI 已在运行（端口 {port}）",
+                    "already_running": True,
+                }
             try:
                 from core.shield_runner import CREATE_NO_WINDOW
+
                 proc = subprocess.Popen(
                     [self.shield_exe, "start", str(port)],
                     stdout=subprocess.PIPE,
@@ -494,12 +569,15 @@ class PythonApi:
                     stdin=subprocess.DEVNULL,
                     creationflags=CREATE_NO_WINDOW,
                     cwd=os.path.dirname(self.shield_exe) or None,
-                    text=True, encoding="utf-8", errors="replace",
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     bufsize=1,
                 )
                 self._web_ui_process = proc
                 # 读几行初始输出确认启动
                 import time
+
                 time.sleep(1.5)
                 initial = ""
                 while proc.stdout and proc.poll() is None:
@@ -509,7 +587,16 @@ class PythonApi:
                             break
                         initial += line
                         # 读到了关键输出就停止等待
-                        if any(kw in line.lower() for kw in ["start", "listen", "serving", "localhost", "error"]):
+                        if any(
+                            kw in line.lower()
+                            for kw in [
+                                "start",
+                                "listen",
+                                "serving",
+                                "localhost",
+                                "error",
+                            ]
+                        ):
                             break
                     except:
                         break
@@ -529,10 +616,18 @@ class PythonApi:
                 return {"running": False, "message": "尚未启动"}
             rc = self._web_ui_process.poll()
             if rc is None:
-                return {"running": True, "pid": self._web_ui_process.pid, "message": "运行中"}
+                return {
+                    "running": True,
+                    "pid": self._web_ui_process.pid,
+                    "message": "运行中",
+                }
             else:
                 self._web_ui_process = None
-                return {"running": False, "exit_code": rc, "message": f"进程已退出（退出码 {rc}）"}
+                return {
+                    "running": False,
+                    "exit_code": rc,
+                    "message": f"进程已退出（退出码 {rc}）",
+                }
 
     def stop_web_ui(self) -> dict:
         """停止 Web UI 后台进程。"""
@@ -547,7 +642,8 @@ class PythonApi:
                 # 先 taskkill 进程树
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                    capture_output=True, timeout=10,
+                    capture_output=True,
+                    timeout=10,
                     creationflags=0x08000000,
                 )
                 proc.wait(timeout=5)
@@ -568,7 +664,9 @@ class PythonApi:
     # ---------- Shield CLI 安装 ----------
 
     DOWNLOAD_ZIP_URL = "https://github.com/fengyily/shield-cli/releases/download/v0.3.11/shield-windows-amd64.zip"
-    INSTALL_BAT_URL = "https://raw.githubusercontent.com/fengyily/shield-cli/main/install.bat"
+    INSTALL_BAT_URL = (
+        "https://raw.githubusercontent.com/fengyily/shield-cli/main/install.bat"
+    )
     INSTALL_DIR = r"C:\Program Files\ShieldCLI"
 
     def download_shield_release(self) -> dict:
@@ -615,7 +713,10 @@ class PythonApi:
         """下载 install.bat 并以管理员权限执行自动安装。"""
         url = self.INSTALL_BAT_URL
         try:
-            bat_dir = os.path.join(os.environ.get("TEMP", os.environ.get("TMP", "C:\\Temp")), "shield_install")
+            bat_dir = os.path.join(
+                os.environ.get("TEMP", os.environ.get("TMP", "C:\\Temp")),
+                "shield_install",
+            )
             os.makedirs(bat_dir, exist_ok=True)
             bat_path = os.path.join(bat_dir, "install.bat")
             urllib.request.urlretrieve(url, bat_path)
@@ -624,11 +725,13 @@ class PythonApi:
             # 执行 install.bat
             proc = subprocess.run(
                 ["cmd", "/c", bat_path],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
                 cwd=bat_dir,
             )
-            stdout = (proc.stdout or "")
-            stderr = (proc.stderr or "")
+            stdout = proc.stdout or ""
+            stderr = proc.stderr or ""
             # 判断是否成功
             success = proc.returncode == 0
             # 即使退出码非零，也可能安装成功（install.bat 可能返回非零）
@@ -644,7 +747,9 @@ class PythonApi:
                 "stdout": stdout[:2000],
                 "stderr": stderr[:2000],
                 "exe_found": exe_found,
-                "message": "安装完成" if (success or exe_found) else f"安装脚本执行完毕（退出码 {proc.returncode}）",
+                "message": "安装完成"
+                if (success or exe_found)
+                else f"安装脚本执行完毕（退出码 {proc.returncode}）",
             }
         except subprocess.TimeoutExpired:
             return {"ok": False, "error": "安装脚本执行超时（>120s）"}
@@ -699,7 +804,9 @@ class PythonApi:
         bm = BackupManager()
         return bm.webdav_upload(local_path, config)
 
-    def backup_webdav_download(self, filename: str, local_dir: str, config: dict) -> dict:
+    def backup_webdav_download(
+        self, filename: str, local_dir: str, config: dict
+    ) -> dict:
         bm = BackupManager()
         return bm.webdav_download(filename, local_dir, config)
 
@@ -707,10 +814,12 @@ class PythonApi:
         bm = BackupManager()
         return bm.webdav_list(config)
 
-    def backup_scheduler_start(self, interval_min: int,
-                                backup_dir: str = "",
-                                webdav_config: dict | None = None) -> None:
-        self._backup_mgr.scheduler_start(interval_min, backup_dir or None, webdav_config)
+    def backup_scheduler_start(
+        self, interval_min: int, backup_dir: str = "", webdav_config: dict | None = None
+    ) -> None:
+        self._backup_mgr.scheduler_start(
+            interval_min, backup_dir or None, webdav_config
+        )
 
     def backup_scheduler_stop(self) -> None:
         self._backup_mgr.scheduler_stop()
@@ -728,7 +837,10 @@ class PythonApi:
             result = self._window.create_file_dialog(
                 webview.OPEN_DIALOG,
                 allow_multiple=False,
-                file_types=("All files (*.*)", "Private key files (*.pem;*.key;*.id_rsa)"),
+                file_types=(
+                    "All files (*.*)",
+                    "Private key files (*.pem;*.key;*.id_rsa)",
+                ),
             )
             if isinstance(result, list) and result:
                 return result[0]
@@ -744,6 +856,7 @@ class PythonApi:
 
 
 # ---------- 工具函数 ----------
+
 
 def _locate_shield() -> str:
     """定位 shield.exe：PATH → Program Files → 常见安装位置。"""
@@ -832,6 +945,7 @@ def _build_argv(params: dict) -> list:
 
 def _compare_versions(v1: str, v2: str) -> int:
     """比较两个语义化版本号。返回 1 (v1>v2), -1 (v1<v2), 0 (相等)。"""
+
     def parse(v: str):
         parts = []
         for p in v.split("."):
@@ -842,6 +956,7 @@ def _compare_versions(v1: str, v2: str) -> int:
         while len(parts) < 3:
             parts.append(0)
         return parts[:3]
+
     a, b = parse(v1), parse(v2)
     for i in range(3):
         if a[i] > b[i]:

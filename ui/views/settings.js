@@ -15,7 +15,7 @@ Views.settings = function () {
           若部署了私有服务端，可在此指定。
         </p>
         <div class="form-row">
-          <label class="form-label">API 服务器 URL</label>
+          <label class="form-label">API 服务器 URL ：<a href="https://console.yishield.com/enter" target="_blank" class="text-sm">控制台</a></label>
           <input class="input mono" id="set-server" placeholder="https://console.yishield.com/raas">
           <div class="form-hint">通过 <code class="mono">-H / --server</code> 参数传递</div>
         </div>
@@ -83,12 +83,12 @@ Views.settings = function () {
     <div class="card mt-4">
       <div class="card-header"><h3 class="card-title">ℹ️ 关于 Shield GUI</h3></div>
       <table class="table">
-        <tr><td class="text-muted">GUI 版本</td><td class="mono">1.0.0</td></tr>
+        <tr><td class="text-muted">GUI 版本</td><td class="mono" id="about-gui">—</td></tr>
         <tr><td class="text-muted">Shield CLI</td><td class="mono" id="about-shield">—</td></tr>
         <tr><td class="text-muted">可执行文件</td><td class="mono text-sm" id="about-path">—</td></tr>
         <tr><td class="text-muted">配置目录</td><td class="mono text-sm" id="about-cfg">—</td></tr>
         <tr><td class="text-muted">技术栈</td><td>Python 3 + pywebview + 原生 HTML/CSS/JS</td></tr>
-        <tr><td class="text-muted">官方文档</td><td><a href="https://docs.yishield.com" onclick="return false" class="copyable" title="点击复制">https://docs.yishield.com</a></td></tr>
+        <tr><td class="text-muted">官方文档</td><td><a href="https://docs.yishield.com" class="copyable" target="_blank">https://docs.yishield.com</a></td></tr>
       </table>
     </div>
   `;
@@ -110,6 +110,8 @@ Views._mount_settings = async function () {
   } catch {}
   // 填充关于信息
   if (State.env) {
+    const guiVer = State.env.gui_version || '1.0.0';
+    document.getElementById('about-gui').textContent = guiVer;
     document.getElementById('about-shield').textContent = State.env.version || '—';
     document.getElementById('about-path').textContent = State.env.path || '—';
     document.getElementById('about-cfg').textContent = State.env.config?.effective_dir || '—';

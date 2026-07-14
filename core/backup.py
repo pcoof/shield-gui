@@ -6,6 +6,7 @@
   ├── settings.json      （GUI 设置）
   └── info.json          （备份元数据：时间、版本）
 """
+
 from __future__ import annotations
 
 import json
@@ -51,6 +52,7 @@ def _safe_write_json(path: str, data) -> bool:
 # =============================================================================
 # BackupManager
 # =============================================================================
+
 
 class BackupManager:
     """管理本地/远程备份创建、恢复、定时调度。"""
@@ -155,12 +157,16 @@ class BackupManager:
                 if fn.startswith("ShieldGUI_") and fn.endswith(".zip"):
                     fp = os.path.join(backup_dir, fn)
                     stat = os.stat(fp)
-                    results.append({
-                        "name": fn,
-                        "path": fp,
-                        "size": stat.st_size,
-                        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    })
+                    results.append(
+                        {
+                            "name": fn,
+                            "path": fp,
+                            "size": stat.st_size,
+                            "modified": datetime.fromtimestamp(
+                                stat.st_mtime
+                            ).isoformat(),
+                        }
+                    )
         except Exception:
             pass
         return results
@@ -177,9 +183,14 @@ class BackupManager:
 
     # ── WebDAV 远程备份 ──
 
-    def _webdav_request(self, url: str, method: str = "GET",
-                        data: bytes | None = None,
-                        username: str = "", password: str = "") -> tuple[int, bytes]:
+    def _webdav_request(
+        self,
+        url: str,
+        method: str = "GET",
+        data: bytes | None = None,
+        username: str = "",
+        password: str = "",
+    ) -> tuple[int, bytes]:
         """底层 WebDAV HTTP 请求（基于 urllib）。"""
         import urllib.request
         import base64
@@ -213,8 +224,10 @@ class BackupManager:
     def _webdav_mkcol(self, dir_url: str, username: str, password: str) -> bool:
         """通过 MKCOL 创建远程目录，已存在时返回 True。"""
         code, body = self._webdav_request(
-            dir_url, method="MKCOL",
-            username=username, password=password,
+            dir_url,
+            method="MKCOL",
+            username=username,
+            password=password,
         )
         # 201=Created, 405=MethodNotAllowed/已存在, 200=OK
         return code in (200, 201, 405)
@@ -237,13 +250,19 @@ class BackupManager:
             with open(local_path, "rb") as f:
                 data = f.read()
             code, body = self._webdav_request(
-                remote_url, method="PUT", data=data,
-                username=username, password=password,
+                remote_url,
+                method="PUT",
+                data=data,
+                username=username,
+                password=password,
             )
             if 200 <= code < 300:
                 self._notify("success", f"已上传到 WebDAV: {name}")
                 return {"ok": True}
-            return {"ok": False, "error": f"HTTP {code}: {body.decode(errors='replace')[:200]}"}
+            return {
+                "ok": False,
+                "error": f"HTTP {code}: {body.decode(errors='replace')[:200]}",
+            }
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
@@ -259,8 +278,10 @@ class BackupManager:
 
         try:
             code, body = self._webdav_request(
-                remote_url, method="GET",
-                username=username, password=password,
+                remote_url,
+                method="GET",
+                username=username,
+                password=password,
             )
             if code != 200:
                 return {"ok": False, "error": f"HTTP {code}: 下载失败"}
@@ -284,12 +305,15 @@ class BackupManager:
         body = (
             '<?xml version="1.0"?>'
             '<d:propfind xmlns:d="DAV:">'
-            '<d:prop><d:displayname/><d:getcontentlength/><d:getlastmodified/></d:prop>'
-            '</d:propfind>'
+            "<d:prop><d:displayname/><d:getcontentlength/><d:getlastmodified/></d:prop>"
+            "</d:propfind>"
         ).encode()
         code, resp_body = self._webdav_request(
-            remote_url, method="PROPFIND", data=body,
-            username=username, password=password,
+            remote_url,
+            method="PROPFIND",
+            data=body,
+            username=username,
+            password=password,
         )
         if code not in (207, 200):
             return []
@@ -305,7 +329,9 @@ class BackupManager:
                 if not fname.startswith("ShieldGUI_") or not fname.endswith(".zip"):
                     continue
                 prop = resp_el.find("d:propstat/d:prop", ns)
-                size_el = prop.find("d:getcontentlength", ns) if prop is not None else None
+                size_el = (
+                    prop.find("d:getcontentlength", ns) if prop is not None else None
+                )
                 size = int(size_el.text) if size_el is not None and size_el.text else 0
                 files.append({"name": fname, "size": size})
         except Exception:
@@ -314,9 +340,12 @@ class BackupManager:
 
     # ── 定时备份调度 ──
 
-    def scheduler_start(self, interval_minutes: int,
-                        backup_dir: str | None = None,
-                        webdav_config: dict | None = None) -> None:
+    def scheduler_start(
+        self,
+        interval_minutes: int,
+        backup_dir: str | None = None,
+        webdav_config: dict | None = None,
+    ) -> None:
         """启动定时备份（单位：分钟，0 = 关闭）。"""
         self.scheduler_stop()
         if interval_minutes <= 0:
@@ -338,17 +367,24 @@ class BackupManager:
             "interval_min": self._scheduler_interval_min,
         }
 
-    def _scheduler_loop(self, backup_dir: str | None = None,
-                        webdav_config: dict | None = None) -> None:
+    def _scheduler_loop(
+        self, backup_dir: str | None = None, webdav_config: dict | None = None
+    ) -> None:
         if not self._scheduler_running or self._scheduler_interval_min <= 0:
             return
         # 执行备份
         result = self.create_backup(backup_dir)
-        if result.get("ok") and webdav_config and webdav_config.get("enabled") and webdav_config.get("url"):
+        if (
+            result.get("ok")
+            and webdav_config
+            and webdav_config.get("enabled")
+            and webdav_config.get("url")
+        ):
             self.webdav_upload(result["path"], webdav_config)
         # 设定下次
         self._scheduler_timer = threading.Timer(
-            self._scheduler_interval_min * 60, self._scheduler_loop,
+            self._scheduler_interval_min * 60,
+            self._scheduler_loop,
             args=(backup_dir, webdav_config),
         )
         self._scheduler_timer.daemon = True

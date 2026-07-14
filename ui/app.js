@@ -403,15 +403,9 @@ async function boot() {
     // 版本号显示
     const ver = State.env.version || '';
     document.getElementById('nav-version').textContent = ver || 'Shield CLI';
-    // 配置目录提示
-    const cfg = State.env.config || {};
-    if (cfg.needs_trigger) {
-      document.getElementById('nav-footer').innerHTML =
-        `<span class="text-warning">⏳ 配置目录待生成</span><br>` +
-        `<span class="text-xs">首次连接时自动触发</span>`;
-    } else {
-      document.getElementById('nav-footer').textContent = '配置: ' + (cfg.effective_dir || '');
-    }
+    // 移除底部配置目录提示（用户要求不要显示）
+    const footer = document.getElementById('nav-footer');
+    if (footer) footer.textContent = '';
   } catch (e) {
     console.error('boot env failed', e);
     toast('环境检测失败: ' + e.message, 'error');

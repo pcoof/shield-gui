@@ -1,6 +1,6 @@
 [project]
 name = "shield-gui"
-version = "20260707.4"
+version = "20260714.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13.5"
@@ -9,6 +9,7 @@ dependencies = [
     "pystray>=0.19.5",
     "Pillow>=11.0.0",
 ]
+
 
 
 

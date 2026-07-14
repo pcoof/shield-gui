@@ -224,7 +224,7 @@ def main() -> None:
     tray.start()
 
     # webview.start(func) 的 func 在 GUI 循环启动后的独立线程中执行
-    webview.start(func=lambda: _suppress_dwm_border(api), debug=True)
+    webview.start(func=lambda: _suppress_dwm_border(api), debug=False)
 
 
 if __name__ == "__main__":

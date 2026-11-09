@@ -1,0 +1,129 @@
+<style>
+  /* 截图专用：无头浏览器虚拟时间不驱动 CSS 动画，禁用入场动画避免 opacity 停在 0 */
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .view, .modal-mask, .card, .session-item, .diag-card { opacity: 1 !important; transform: none !important; }
+</style>
+<script>
+(function () {
+  const now = Date.now() / 1000;
+  const S = [
+    {session_id:'a1b2c3d4e5f6', source:'gui', protocol:'http', target:'127.0.0.1:3000',
+     display_name:'本地管理后台', status:'running', pid:18432, started_at:now-742,
+     access_urls:['https://demo-app.tunnel.yishield.com'], retry_count:0, warning:'', error_info:null},
+    {session_id:'b2c3d4e5f6a1', source:'gui', protocol:'ssh', target:'127.0.0.1:22',
+     display_name:'家里 NAS', status:'error', pid:null, started_at:now-126,
+     access_urls:[], retry_count:1, warning:'',
+     error_info:{code:'http_timeout', title:'控制台接口响应超时',
+       reason:'quick-setup 请求在等待响应头时超时，CLI 自动重试 5 次后仍失败。',
+       advice:['检查代理软件是否已启动','在「应用配置 → 网络与连接」里配置可用的 HTTP 代理','稍后点「重试」重新发起连接'],
+       retryable:true, raw:'context deadline exceeded (Client.Timeout exceeded while awaiting headers)'}},
+    {session_id:'web:830989d00105', source:'web', protocol:'tcp', target:'127.0.0.1:3306',
+     display_name:'MySQL 生产库', status:'running', pid:null, started_at:now-360,
+     access_urls:['https://mysql.tunnel.yishield.com'], raw_status:'connected',
+     retry_count:0, warning:'', error_info:null},
+  ];
+  const LOG = {
+    'a1b2c3d4e5f6':
+      '  Shield CLI v0.3.12  (windows/amd64)\n' +
+      '  → 正在连接控制台 https://console.yishield.com/raas ...\n' +
+      '  ✓ quick-setup 完成\n' +
+      '  ✓ 隧道已建立  http://127.0.0.1:3000\n' +
+      '  访问地址: https://demo-app.tunnel.yishield.com\n' +
+      '  [运行 12m22s] 连接正常，心跳 OK\n',
+    'b2c3d4e5f6a1':
+      '  Shield CLI v0.3.12  (windows/amd64)\n' +
+      '  → 正在连接控制台 https://console.yishield.com/raas ...\n' +
+      '  [debug] callQuickSetup: attempt 1/5 failed: context deadline exceeded\n' +
+      '  [debug] callQuickSetup: attempt 5/5 failed: context deadline exceeded\n' +
+      '  ✗ Connection failed\n' +
+      '\n  [Shield GUI 诊断] 控制台接口响应超时\n' +
+      '  原因: quick-setup 请求在等待响应头时超时。\n' +
+      '  建议: 1. 检查代理软件是否已启动  2. 配置可用的 HTTP 代理\n',
+  };
+  const ENV = {
+    installed:true, gui_version:'20260714.2', version:'0.3.12',
+    path:'C://Program Files\\ShieldCLI\\shield.exe',
+    config:{official_dir:true, effective_dir:'C://Users//Administrator//.shield'},
+    protocols:{http:{port:80}, ssh:{port:22}},
+  };
+  const LIMITS = {max_sessions:10, max_running:3, sessions:3, running:2,
+    gui_sessions:2, web_sessions:1, can_start:true, web_ui_online:true,
+    web_ui_port:8181, web_ui_url:'http://localhost:8181/'};
+  function buildArgv(p) {
+    const a = [p.protocol || 'ssh'];
+    if (p.target) a.push(/^\d+$/.test(p.target) ? '127.0.0.1:' + p.target : p.target);
+    const flags = {username:'--username', auth_pass:'--auth-pass', private_key:'--private-key',
+      passphrase:'--passphrase', db_name:'--db-name', db_user:'--db-user', db_pass:'--db-pass',
+      display_name:'--display-name', site_name:'--site-name', visable:'--visable',
+      tunnel_port:'--tunnel-port', server:'--server'};
+    Object.keys(flags).forEach(function (k) { if (p[k]) a.push(flags[k], String(p[k])); });
+    ['enable_sftp','readonly','invisible','verbose'].forEach(function (k) {
+      if (p[k]) a.push('--' + k.replace('_','-'));
+    });
+    if (p.extra_argv && p.extra_argv.length) a.push.apply(a, p.extra_argv);
+    return {argv:a, protocol:p.protocol};
+  }
+  const base = {
+    get_env: () => Promise.resolve(ENV),
+    list_sessions: () => Promise.resolve(S),
+    session_limits: () => Promise.resolve(LIMITS),
+    get_session: sid => Promise.resolve(Object.assign({}, S.find(x => x.session_id === sid) || S[0], {
+      editable: true, argv:['http','127.0.0.1:3000','--display-name','本地管理后台'],
+      params:{protocol:'http', target:'127.0.0.1:3000', display_name:'本地管理后台',
+        username:'', auth_pass:'', private_key:'', passphrase:'', enable_sftp:false,
+        db_name:'', db_user:'', db_pass:'', readonly:false, site_name:'', visable:'visable',
+        tunnel_port:'', server:'', invisible:false, verbose:false, extra_argv:[]}
+    })),
+    update_session: () => Promise.resolve({ok:true, need_restart:true, session_id:'a1b2c3d4e5f6'}),
+    build_argv: p => Promise.resolve(buildArgv(p)),
+    poll_log: (sid, offset) => {
+      const txt = LOG[sid] || '';
+      return Promise.resolve({exists:true, text:(offset || 0) === 0 ? txt : '',
+        total:txt.length, access_urls:[], status:'running'});
+    },
+    list_presets: () => Promise.resolve([1,2,3,4,5]),
+    plugin_list: () => Promise.resolve({count:3, plugins:[]}),
+    load_settings: () => Promise.resolve({server:'', proxy:'', visable:'visable',
+      preflight:true, auto_retry:1, tray_enabled:true}),
+    check_updates: () => Promise.resolve({gui:{has_update:false, latest_version:'20260714.2'},
+      shield:{has_update:false, latest_version:'0.3.12'},
+      mirrors:['https://ghproxy.net/','https://v4.gh-proxy.org/'], errors:[]}),
+    web_ui_info: () => Promise.resolve({online:true, version:'0.3.12', apps:1, connected:1}),
+    probe_server: () => Promise.resolve({ok:true, server:'https://console.yishield.com/raas',
+      stage_label:'HTTP 响应', message:'控制台连接正常', dns_ms:8, connect_ms:26,
+      tls_ms:74, http_ms:186, elapsed_ms:294, advice:[]}),
+    get_update_config: () => Promise.resolve({mirrors:['https://ghproxy.net/','https://v4.gh-proxy.org/']}),
+  };
+  window.pywebview = {api: new Proxy(base, {
+    get: function (t, k) {
+      // 不能把 then 兜底成函数，否则 api 会被当成 thenable 让所有 await 挂起
+      if (k === 'then' || k === Symbol.toStringTag) return undefined;
+      if (k in t) return t[k];
+      return function () { return Promise.resolve({}); };
+    }
+  })};
+  window.addEventListener('load', function () {
+    setTimeout(function () {
+      const route = new URLSearchParams(location.search).get('route') || 'dashboard';
+      State.env = ENV; State.sessions = S; State.limits = LIMITS;
+      const footer = document.getElementById('nav-footer'); if (footer) footer.textContent = '';
+      const tv = document.getElementById('titlebar-version'); if (tv) tv.textContent = 'v20260714.2';
+      const nv = document.getElementById('nav-version'); if (nv) nv.textContent = 'v0.3.12';
+      if (route === 'editor') {
+        navigate('sessions');
+        Views._editSession('a1b2c3d4e5f6');
+      } else if (route === 'tunnel-new') {
+        navigate('tunnel-new');
+        TunnelForm.select('http');
+        document.getElementById('f-target').value = '127.0.0.1:3000';
+        document.getElementById('f-display').value = '本地管理后台';
+        document.getElementById('adv-fields').classList.remove('hidden');
+        document.getElementById('adv-toggle-text').textContent = '收起 ▴';
+        TunnelForm.updatePreview();
+      } else {
+        navigate(route);
+      }
+    }, 140);
+  });
+})();
+</script>

@@ -101,7 +101,8 @@ Views._refresh_sessions = function (force) {
 
   const sig = list
     .map(s => `${s.session_id}:${s.status}:${(s.access_urls || [])[0] || ''}:${s.pid || ''}:${s.source || ''}`
-      + `:${(s.error_info || {}).code || ''}:${s.retry_count || 0}:${s.warning || ''}`)
+      + `:${(s.error_info || {}).code || ''}:${s.retry_count || 0}:${s.warning || ''}`
+      + `:${s.protocol || ''}:${s.target || ''}:${s.display_name || ''}`)
     .join('|');
   const canPatch = !force && sig === Views._sessionSig && root.childElementCount > 0;
 
@@ -190,9 +191,8 @@ Views._renderSession = function (s) {
         <div class="flex gap-2">
           ${url ? `<button class="btn btn-sm btn-info" onclick="window.open('${escapeAttr(url)}','_blank')">🌐 访问</button>` : ''}
           ${url ? `<button class="btn btn-sm" onclick="copyText('${escapeAttr(url)}')">📋 复制 URL</button>` : ''}
-          ${isWeb
-            ? `<button class="btn btn-sm" onclick="Views._openWebPanel()">⚙ 面板</button>`
-            : `<button class="btn btn-sm" onclick="Views._editSession('${s.session_id}')">✏️ 编辑</button>`}
+          <button class="btn btn-sm" onclick="Views._editSession('${s.session_id}')">✏️ 编辑</button>
+          ${isWeb ? `<button class="btn btn-sm" onclick="Views._openWebPanel()">⚙ 面板</button>` : ''}
           ${isStopped
             ? `<button class="btn btn-sm btn-primary" ${canStart ? '' : 'disabled title="并发已满，请先停止其他连接"'}
                  onclick="${startFn}('${s.session_id}')">${startLabel}</button>`
@@ -244,17 +244,192 @@ Views._openWebPanel = async function () {
 Views._editSession = async function (sid) {
   try {
     const sess = await Shield.call('get_session', sid);
-    if (!sess) { toast('无法获取会话信息', 'error'); return; }
-    // 预填到隧道新建表单
-    State.pendingPreset = {
-      protocol: sess.protocol,
-      target: sess.target,
-      display_name: sess.display_name,
-    };
-    navigate('tunnel-new');
+    if (!sess) { toast('无法获取会话信息（会话可能已被移除）', 'error'); return; }
+    if (sess.editable === false) {
+      const go = await confirmDialog(
+        '在 Web 面板中编辑',
+        `该会话由官方 Web 面板管理，桌面端不能直接修改它的参数。\n\n` +
+        `应用：${sess.display_name || '—'}\n` +
+        `协议：${sess.protocol || '—'}\n` +
+        `目标：${sess.target || '—'}\n\n` +
+        `是否打开 Web 面板进行编辑？`
+      );
+      if (go) Views._openWebPanel();
+      return;
+    }
+    Views._openSessionEditor(sess);
   } catch (e) {
     toast('获取会话信息失败: ' + e.message, 'error');
   }
+};
+
+/* ---------- 会话编辑弹窗（原地改参数，不必跳去新建页重新建一个会话） ---------- */
+Views._openSessionEditor = function (sess) {
+  const p = sess.params || {};
+  const fallback = {
+    ssh: ['🔐 SSH'], rdp: ['🖥 RDP'], vnc: ['🖱 VNC'], http: ['🌐 HTTP'],
+    https: ['🔒 HTTPS'], telnet: ['📟 Telnet'], tcp: ['🔌 TCP'], udp: ['📡 UDP'],
+    mysql: ['🗄 MySQL'], postgres: ['🗄 PostgreSQL'], sqlserver: ['🗄 SQLServer'],
+  };
+  const protocols = (typeof TunnelForm !== 'undefined' && TunnelForm.protocols)
+    ? TunnelForm.protocols : fallback;
+  const protoOptions = Object.keys(protocols).map(k => {
+    const label = Array.isArray(protocols[k]) ? protocols[k][0] : (protocols[k].label || k);
+    const icon = typeof protocols[k] === 'object' && !Array.isArray(protocols[k])
+      ? (protocols[k].icon || '') : '';
+    return `<option value="${escapeAttr(k)}" ${k === p.protocol ? 'selected' : ''}>${escapeHtml(icon + ' ' + label)}</option>`;
+  }).join('');
+  const running = sess.status === 'running' || sess.status === 'starting';
+  const val = k => escapeAttr(p[k] == null ? '' : String(p[k]));
+  const chk = k => (p[k] ? 'checked' : '');
+  const extra = p.extra_argv || [];
+
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask session-editor';
+  mask.innerHTML = `
+    <div class="modal editor-modal">
+      <h3 class="modal-title">✏️ 编辑会话参数</h3>
+      <div class="editor-head">
+        <span class="mono text-sm">${escapeHtml(sess.session_id)}</span>
+        <span class="badge ${running ? 'badge-success' : 'badge-muted'}">${running ? '运行中' : '未运行'}</span>
+        <span class="text-muted text-sm">来源：桌面端</span>
+      </div>
+      <div class="editor-body">
+        <div class="alert ${running ? 'alert-warning' : 'alert-info'} mb-3">
+          <span>${running ? '!' : 'ℹ'}</span>
+          <div class="text-sm">${running
+            ? '会话正在运行，仅保存不会立即生效。点「保存并重启」可立刻应用新参数（连接会短暂中断）。'
+            : '会话当前未运行，保存后点「▶ 启动」即使用新参数；也可直接「保存并启动」。'}</div>
+        </div>
+
+        <div class="editor-section-title">基本参数</div>
+        <div class="editor-grid">
+          <div class="form-row">
+            <label class="form-label">协议</label>
+            <select class="select" data-field="protocol">${protoOptions}</select>
+          </div>
+          <div class="form-row">
+            <label class="form-label">目标 IP:Port</label>
+            <input class="input mono" data-field="target" value="${val('target')}" placeholder="127.0.0.1:22 / 3000">
+          </div>
+          <div class="form-row">
+            <label class="form-label">显示名称</label>
+            <input class="input" data-field="display_name" value="${val('display_name')}" placeholder="便于在会话列表识别">
+          </div>
+          <div class="form-row">
+            <label class="form-label">站点名称 (site-name)</label>
+            <input class="input" data-field="site_name" value="${val('site_name')}">
+          </div>
+        </div>
+
+        <div class="editor-section">
+          <div class="editor-section-title">认证参数 <span class="text-muted text-xs">SSH / RDP / VNC</span></div>
+          <div class="editor-grid">
+            <div class="form-row"><label class="form-label">用户名</label>
+              <input class="input mono" data-field="username" value="${val('username')}"></div>
+            <div class="form-row"><label class="form-label">密码</label>
+              <input class="input mono" type="password" data-field="auth_pass" value="${val('auth_pass')}"></div>
+            <div class="form-row"><label class="form-label">私钥路径</label>
+              <input class="input mono" data-field="private_key" value="${val('private_key')}"></div>
+            <div class="form-row"><label class="form-label">私钥口令</label>
+              <input class="input mono" type="password" data-field="passphrase" value="${val('passphrase')}"></div>
+          </div>
+          <label class="checkbox"><input type="checkbox" data-field="enable_sftp" ${chk('enable_sftp')}> 启用 SFTP 文件传输</label>
+        </div>
+
+        <div class="editor-section">
+          <div class="editor-section-title">数据库参数 <span class="text-muted text-xs">插件协议</span></div>
+          <div class="editor-grid">
+            <div class="form-row"><label class="form-label">数据库名</label>
+              <input class="input mono" data-field="db_name" value="${val('db_name')}"></div>
+            <div class="form-row"><label class="form-label">数据库用户</label>
+              <input class="input mono" data-field="db_user" value="${val('db_user')}"></div>
+            <div class="form-row"><label class="form-label">数据库密码</label>
+              <input class="input mono" type="password" data-field="db_pass" value="${val('db_pass')}"></div>
+            <div class="form-row"><label class="form-label">只读模式</label>
+              <label class="checkbox" style="margin-top:6px"><input type="checkbox" data-field="readonly" ${chk('readonly')}> 强制只读</label></div>
+          </div>
+        </div>
+
+        <div class="editor-section">
+          <div class="editor-section-title">高级选项</div>
+          <div class="editor-grid">
+            <div class="form-row"><label class="form-label">AC 节点 (visable)</label>
+              <input class="input mono" data-field="visable" value="${val('visable')}"></div>
+            <div class="form-row"><label class="form-label">隧道端口 (tunnel-port)</label>
+              <input class="input mono" data-field="tunnel_port" value="${val('tunnel_port')}"></div>
+            <div class="form-row" style="grid-column:1 / -1"><label class="form-label">自定义服务器 (server)</label>
+              <input class="input mono" data-field="server" value="${val('server')}" placeholder="https://console.yishield.com/raas"></div>
+          </div>
+          <div class="editor-switches">
+            <label class="checkbox"><input type="checkbox" data-field="invisible" ${chk('invisible')}> 隐身模式</label>
+            <label class="checkbox"><input type="checkbox" data-field="verbose" ${chk('verbose')}> 详细日志 (-v)</label>
+          </div>
+        </div>
+
+        ${extra.length ? `<div class="editor-note">原样保留的自定义参数：<span class="mono">${escapeHtml(extra.join(' '))}</span></div>` : ''}
+
+        <div class="editor-section-title">命令预览</div>
+        <div class="cmd-preview" id="editor-cmd">shield …</div>
+        <div class="editor-note">仅修改本会话，不会改动已保存的连接预设。</div>
+      </div>
+      <div class="modal-actions editor-actions">
+        <button class="btn" data-act="cancel">取消</button>
+        <button class="btn" data-act="save">💾 仅保存</button>
+        <button class="btn btn-primary" data-act="restart">${running ? '🔄 保存并重启' : '▶ 保存并启动'}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(mask);
+
+  const preview = () => Views._updateEditorPreview(mask, extra);
+  mask.addEventListener('input', preview);
+  mask.addEventListener('change', preview);
+  preview();
+
+  mask.addEventListener('click', async e => {
+    const act = e.target.dataset.act;
+    if (e.target === mask || act === 'cancel') { mask.remove(); return; }
+    if (act !== 'save' && act !== 'restart') return;
+    const btn = e.target;
+    btn.disabled = true;
+    const params = Views._collectEditorParams(mask);
+    if (extra.length) params.extra_argv = extra.slice();
+    try {
+      const res = await Shield.call('update_session', sess.session_id, params, act === 'restart');
+      if (!res || res.error) {
+        toast('保存失败: ' + ((res && res.error) || '未知错误'), 'error');
+        btn.disabled = false;
+        return;
+      }
+      mask.remove();
+      if (res.restarted) toast('参数已保存，会话已用新配置重启', 'success');
+      else if (res.need_restart) toast('参数已保存，重启会话后生效', 'success');
+      else toast('参数已保存，下次启动时生效', 'success');
+      if (Views._logOffsets) delete Views._logOffsets[sess.session_id];
+      await refreshSessions();
+    } catch (err) {
+      toast('保存出错: ' + err.message, 'error');
+      btn.disabled = false;
+    }
+  });
+};
+
+Views._collectEditorParams = function (mask) {
+  const out = {};
+  mask.querySelectorAll('[data-field]').forEach(el => {
+    out[el.dataset.field] = el.type === 'checkbox' ? el.checked : (el.value || '').trim();
+  });
+  return out;
+};
+
+Views._updateEditorPreview = async function (mask, extra) {
+  const params = Views._collectEditorParams(mask);
+  if (extra && extra.length) params.extra_argv = extra;
+  try {
+    const res = await Shield.call('build_argv', params);
+    const el = mask.querySelector('#editor-cmd');
+    if (el) el.textContent = 'shield ' + (res.argv || []).join(' ');
+  } catch { /* 预览失败不影响保存 */ }
 };
 
 Views._restartSession = async function (sid) {

@@ -428,6 +428,67 @@
 .modal-body { color: var(--text-secondary); margin-bottom: var(--sp-5); font-size: var(--fs-sm); }
 .modal-actions { display: flex; justify-content: flex-end; gap: var(--sp-2); }
 
+/* ---------- 会话编辑弹窗 ---------- */
+.session-editor .editor-modal {
+  width: 760px;
+  max-width: 94vw;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--sp-5);
+}
+.session-editor .editor-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--sp-4);
+}
+.session-editor .editor-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: var(--sp-2);
+}
+.session-editor .editor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 var(--sp-4);
+}
+.session-editor .editor-grid .form-row { margin-bottom: var(--sp-3); }
+.session-editor .editor-section {
+  border-top: 1px solid var(--border-muted);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+}
+.session-editor .editor-section-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: var(--sp-2) 0 var(--sp-3);
+}
+.session-editor .editor-switches {
+  display: flex;
+  gap: var(--sp-5);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-2);
+}
+.session-editor .editor-note {
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  margin-top: var(--sp-2);
+  line-height: 1.6;
+  word-break: break-all;
+}
+.session-editor .editor-actions {
+  border-top: 1px solid var(--border-default);
+  padding-top: var(--sp-4);
+  margin-top: var(--sp-4);
+  flex-wrap: wrap;
+}
+.session-editor .editor-actions .btn[disabled] { opacity: .55; cursor: wait; }
+
 /* ---------- Toast ---------- */
 .toast-stack {
   position: fixed; bottom: var(--sp-6); right: var(--sp-6);

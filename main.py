@@ -42,8 +42,9 @@ class MARGINS(ctypes.Structure):
 def _suppress_dwm_border(api: PythonApi) -> None:
     """等待窗口创建后调用 DwmExtendFrameIntoClientArea 消除 DWM 边框/阴影。
 
-    frameless 窗口在 Windows 10/11 上最大化时会因 DWM 绘制残留边框而产生空隙。
-    传入零边距告诉 DWM 不预留任何边框空间。
+    frameless 窗口在 Windows 10/11 上会由 DWM 绘制残留边框并产生顶部空隙。
+    传入零边距告诉 DWM 不预留任何边框空间（本应用已移除最大化，但
+    Resize 时同样需要消除边框）。
     """
     for _ in range(50):  # 最多等 5s
         time.sleep(0.1)

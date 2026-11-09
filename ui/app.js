@@ -130,8 +130,10 @@ const TitleBar = {
   },
 
   minimize() { Shield.call('window_minimize'); },
-  maximize() { Shield.call('window_maximize'); },
   close()    { Shield.call('window_close'); },
+
+  /** 双击标题栏：本应用不提供最大化，改为最小化，避免双击「没反应」 */
+  doubleClickTitleBar() { Shield.call('window_minimize'); },
 
   openGitHub() {
     window.open('https://github.com/pcoof/shield-gui', '_blank');
@@ -545,31 +547,27 @@ function fillPreset(protocol, target, displayName) {
   navigate('tunnel-new');
 }
 
-// ---------- 最大化状态检测 ----------
-function checkMaximized() {
-  // 当窗口外宽≈屏幕宽时判定为最大化
-  const isMax = window.outerWidth >= screen.width && window.outerHeight >= screen.height;
-  document.body.classList.toggle('is-maximized', isMax);
-}
-
 // ---------- 启动 ----------
 async function boot() {
   // 先自愈未加载的视图脚本，再绑定事件与渲染首个页面
   await recoverViews();
 
-  // 最大化检测 + 窗口 resize 时重新检测
-  checkMaximized();
-  window.addEventListener('resize', checkMaximized);
-
-  // 标题栏拖拽（mousedown → mousemove → mouseup）
+  // 标题栏拖拽（mousedown → mousemove → mouseup）+ 双击最小化。
+  // 已移除最大化：frameless 窗口的全屏/最大化会有 DWM 边框残留，
+  // 双击原本的「最大化」被去掉后由最小化接管，保证双击一定有反馈。
   const dragEl = document.getElementById('titlebar-drag');
   if (dragEl) {
     dragEl.addEventListener('mousedown', (e) => {
-      const tag = e.target.tagName;
-      if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'A' || tag === 'SELECT') return;
+      // 交互元素（含 SVG 子元素）不触发拖拽，否则点按钮会被当成拖窗口
+      if (e.target.closest('button, a, input, select, textarea, label')) return;
       TitleBar.startDrag(e);
       // 阻止选中文本
       e.preventDefault();
+    });
+    dragEl.addEventListener('dblclick', (e) => {
+      if (e.target.closest('button, a, input, select, textarea, label')) return;
+      TitleBar.stopDrag();
+      TitleBar.doubleClickTitleBar();
     });
   }
   document.addEventListener('mousemove', (e) => TitleBar.onMouseMove(e));

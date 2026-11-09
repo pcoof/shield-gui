@@ -257,6 +257,20 @@ class ShieldRunner:
         with self._lock:
             return self._sessions.get(sid)
 
+    def update_session_config(self, sid: str, **fields) -> bool:
+        """原地更新会话参数（argv/protocol/target/display_name 等）。
+
+        仅修改记录，不触碰正在运行的进程；参数在下次启动/重启时生效。
+        """
+        with self._lock:
+            session = self._sessions.get(sid)
+            if not session:
+                return False
+            for key, value in fields.items():
+                if hasattr(session, key):
+                    setattr(session, key, value)
+            return True
+
     def poll_log(self, sid: str, offset: int = 0) -> dict:
         """返回从 offset 开始的日志增量，便于前端轮询拉取。"""
         with self._lock:

@@ -306,17 +306,6 @@
   margin: 0;
 }
 
-/* ========== 最大化适配（frameless 全出血） ========== */
-body.is-maximized .titlebar {
-  /* 最大化时消除 DWM 可能残留的顶部空隙 */
-  padding-top: 0;
-}
-body.is-maximized .app {
-  /* 确保 grid 填满整个视口 */
-  height: 100vh;
-  width: 100vw;
-}
-
 /* ========== 边缘/角部 Resize 手柄 ========== */
 .resize-handle { position: fixed; z-index: 9999; }
 /* 四边：4px 条 */
@@ -329,5 +318,3 @@ body.is-maximized .app {
 .corner-tr { top: 0; right: 0; width: 16px; height: 16px; cursor: ne-resize; }
 .corner-bl { bottom: 0; left: 0; width: 16px; height: 16px; cursor: sw-resize; }
 .corner-br { bottom: 0; right: 0; width: 16px; height: 16px; cursor: se-resize; }
-/* 最大化时隐藏手柄（DWM 不允许拖动） */
-body.is-maximized .resize-handle { display: none; }

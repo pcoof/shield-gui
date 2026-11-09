@@ -822,20 +822,8 @@ class PythonApi:
             except Exception:
                 pass
 
-    def window_maximize(self) -> None:
-        if self._window:
-            try:
-                self._window.toggle_fullscreen()
-            except Exception:
-                pass
-
-    def window_restore(self) -> None:
-        if self._window:
-            try:
-                self._window.restore()
-            except Exception:
-                pass
-
+    # 最大化/还原已移除：frameless 窗口只保留「最小化 + 关闭到托盘」，
+    # 双击标题栏由前端映射到 window_minimize。
     def window_close(self) -> None:
         """关闭按钮 → 若托盘启用则隐藏到托盘，否则真正关闭。"""
         if not self._window:
@@ -1293,14 +1281,98 @@ class PythonApi:
         }
 
     def get_session(self, sid: str) -> dict | None:
-        """获取单个会话详情（含 argv）。"""
+        """获取单个会话详情（含 argv 与可回填的表单参数）。"""
         if sid.startswith("web:"):
             for sess in self._web_sessions():
                 if sess.get("session_id") == sid:
-                    return sess
+                    data = dict(sess)
+                    data["editable"] = False
+                    data["params"] = _parse_argv_params(
+                        sess.get("argv") or [],
+                        sess.get("protocol") or "",
+                        sess.get("target") or "",
+                        sess.get("display_name") or "",
+                    )
+                    return data
             return None
         sess = self.runner.get_session(sid) if self.runner else None
-        return sess.to_dict() if sess else None
+        if not sess:
+            return None
+        data = sess.to_dict()
+        data["editable"] = True
+        data["params"] = _parse_argv_params(
+            sess.argv, sess.protocol, sess.target, sess.display_name
+        )
+        return data
+
+    def update_session(self, sid: str, params: dict, restart: bool = False) -> dict:
+        """编辑会话参数：更新 argv 记录，可选「保存并重启」立即生效。
+
+        运行中只保存不重启时，返回 ``need_restart=True`` 提示前端；
+        Web 面板会话由面板管理，这里拒绝修改并引导到面板编辑。
+        """
+        if sid.startswith("web:"):
+            return {"error": "该会话由官方 Web 面板管理，请在面板中编辑"}
+        if not self.runner:
+            return {"error": "runner 未就绪"}
+        sess = self.runner.get_session(sid)
+        if not sess:
+            return {"error": "会话不存在或已被移除"}
+
+        p = self._merge_defaults(params or {})
+        proto = (p.get("protocol") or sess.protocol or "ssh").strip()
+        target = (p.get("target") or "").strip()
+        display = (p.get("display_name") or "").strip()
+        p["protocol"], p["target"], p["display_name"] = proto, target, display
+        if not proto:
+            return {"error": "请选择协议"}
+        argv = _build_argv(p)
+
+        old = (sess.argv, sess.protocol, sess.target, sess.display_name)
+        running = (
+            sess.status in _ACTIVE_STATUS
+            and sess.process is not None
+            and sess.process.poll() is None
+        )
+        self.runner.update_session_config(
+            sid, argv=argv, protocol=proto, target=target,
+            display_name=display,
+        )
+
+        if not restart:
+            return {
+                "ok": True,
+                "session_id": sid,
+                "argv": argv,
+                "params": p,
+                "need_restart": running,
+                "status": sess.status,
+            }
+
+        # 保存并重启：先停旧进程，再用新 argv 起一个新会话并替换旧条目
+        guard = self._check_limits(exclude_sids=(sid,))
+        if guard:
+            return {"error": guard, "limit": self.session_limits()}
+        if running:
+            self.runner.stop_tunnel(sid)
+        cfg = self._network_config()
+        res = self.runner.start_tunnel(
+            argv, proto, target, display,
+            env=self._child_env(cfg["proxy"]),
+            server=self._server_of(argv, p),
+        )
+        if res.get("error") or res.get("status") == "error":
+            # 启动失败：回滚参数到编辑前，避免旧会话带着半成品配置
+            self.runner.update_session_config(
+                sid, argv=old[0], protocol=old[1], target=old[2],
+                display_name=old[3],
+            )
+            if res.get("session_id"):
+                self.runner.remove_session(res["session_id"])
+            return {"error": res.get("error") or "重启失败，请查看会话日志"}
+        self.runner.remove_session(sid)
+        res["restarted"] = True
+        return res
 
     def restart_session(self, sid: str) -> dict:
         """重启会话：Web 会话重新 connect，本地会话复用原 argv 新建进程。"""
@@ -1879,7 +1951,85 @@ def _build_argv(params: dict) -> list:
     if params.get("verbose"):
         argv.append("--verbose")
 
+    # 编辑会话时原样保留无法映射到表单的自定义参数
+    extra = params.get("extra_argv") or []
+    if isinstance(extra, (list, tuple)):
+        argv += [str(x) for x in extra if str(x).strip()]
+
     return argv
+
+
+# argv 中的 flag → 表单字段（与 _build_argv 一一对应）
+_FLAG_FIELDS = {
+    "--username": "username",
+    "-u": "username",
+    "--auth-pass": "auth_pass",
+    "--private-key": "private_key",
+    "--passphrase": "passphrase",
+    "--db-name": "db_name",
+    "--db-user": "db_user",
+    "--db-pass": "db_pass",
+    "--display-name": "display_name",
+    "--site-name": "site_name",
+    "--visable": "visable",
+    "--tunnel-port": "tunnel_port",
+    "--server": "server",
+    "-H": "server",
+}
+_SWITCH_FIELDS = {
+    "--enable-sftp": "enable_sftp",
+    "--readonly": "readonly",
+    "--invisible": "invisible",
+    "--verbose": "verbose",
+    "-v": "verbose",
+}
+
+
+def _parse_argv_params(
+    argv: list, protocol: str = "", target: str = "", display_name: str = ""
+) -> dict:
+    """把 shield argv 反解成新建隧道表单的字段（供「编辑会话」回填）。
+
+    无法映射到表单的未知参数收集进 ``extra_argv``，保存时原样追加，
+    避免编辑一次就把自定义 flag 丢掉。
+    """
+    args = [str(a) for a in (argv or [])]
+    proto = protocol or (args[0] if args else "ssh")
+    params = {
+        "protocol": proto,
+        "target": target or "",
+        "display_name": display_name or "",
+        "username": "", "auth_pass": "", "private_key": "", "passphrase": "",
+        "enable_sftp": False, "db_name": "", "db_user": "", "db_pass": "",
+        "readonly": False, "site_name": "", "visable": "", "tunnel_port": "",
+        "server": "", "invisible": False, "verbose": False,
+        "extra_argv": [],
+    }
+    positional: list[str] = []
+    i = 1 if args and not args[0].startswith("-") else 0
+    while i < len(args):
+        a = args[i]
+        if a in _FLAG_FIELDS and i + 1 < len(args):
+            params[_FLAG_FIELDS[a]] = args[i + 1]
+            i += 2
+            continue
+        if a in _SWITCH_FIELDS:
+            params[_SWITCH_FIELDS[a]] = True
+            i += 1
+            continue
+        if a.startswith("-"):
+            params["extra_argv"].append(a)
+            if i + 1 < len(args) and not args[i + 1].startswith("-"):
+                params["extra_argv"].append(args[i + 1])
+                i += 2
+            else:
+                i += 1
+            continue
+        positional.append(a)
+        i += 1
+    if not params["target"] and positional:
+        params["target"] = positional[0]
+    return params
 
 
 def _compare_versions(v1: str, v2: str) -> int:

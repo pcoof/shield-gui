@@ -3,15 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <title>Shield GUI</title>
-  <link rel="stylesheet" href="styles/base.css">
-  <link rel="stylesheet" href="styles/layout.css">
-  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/base.css?v=20261110c">
+  <link rel="stylesheet" href="styles/layout.css?v=20261110c">
+  <link rel="stylesheet" href="styles/components.css?v=20261110c">
 </head>
 <body>
   <div class="app" id="app">
     <!-- ========== 自定义标题栏 ========== -->
     <header class="titlebar" id="titlebar">
-      <div class="titlebar-drag" id="titlebar-drag">
+      <div class="titlebar-drag" id="titlebar-drag"
+           title="按住拖动移动窗口 · 双击最小化">
         <div class="titlebar-brand">
           <span class="titlebar-icon">🛡</span>
           <span class="titlebar-name">Shield GUI</span>
@@ -44,8 +45,7 @@
           </svg>
         </a>
         <button class="titlebar-btn" onclick="TitleBar.minimize()" title="最小化">─</button>
-        <button class="titlebar-btn" onclick="TitleBar.maximize()" title="最大化">□</button>
-        <button class="titlebar-btn titlebar-close" onclick="TitleBar.close()" title="关闭">✕</button>
+        <button class="titlebar-btn titlebar-close" onclick="TitleBar.close()" title="关闭（隐藏到托盘）">✕</button>
       </div>
     </header>
 
@@ -138,12 +138,12 @@
 
   <!-- 脚本 -->
   <!-- 版本号用于绕开 WebView2 对 file:// 脚本的缓存；改动 UI 后同步升级 v 值 -->
-  <script src="app.js?v=20261110b"></script>
-  <script src="views/dashboard.js?v=20261110b"></script>
-  <script src="views/tunnel-new.js?v=20261110b"></script>
-  <script src="views/presets.js?v=20261110b"></script>
-  <script src="views/sessions.js?v=20261110b"></script>
-  <script src="views/protocols.js?v=20261110b"></script>
+  <script src="app.js?v=20261110c"></script>
+  <script src="views/dashboard.js?v=20261110c"></script>
+  <script src="views/tunnel-new.js?v=20261110c"></script>
+  <script src="views/presets.js?v=20261110c"></script>
+  <script src="views/sessions.js?v=20261110c"></script>
+  <script src="views/protocols.js?v=20261110c"></script>
   <!-- ========== 边缘/角部 resize 手柄（frameless 窗口用） ========== -->
   <!-- 四边 -->
   <div class="resize-handle edge-t" data-edge="t"></div>
@@ -156,10 +156,10 @@
   <div class="resize-handle corner-bl" data-edge="bl"></div>
   <div class="resize-handle corner-br" data-edge="br"></div>
 
-  <script src="views/plugins.js?v=20261110b"></script>
-  <script src="views/service.js?v=20261110b"></script>
-  <script src="views/credentials.js?v=20261110b"></script>
-  <script src="views/settings.js?v=20261110b"></script>
-  <script src="views/backup.js?v=20261110b"></script>
+  <script src="views/plugins.js?v=20261110c"></script>
+  <script src="views/service.js?v=20261110c"></script>
+  <script src="views/credentials.js?v=20261110c"></script>
+  <script src="views/settings.js?v=20261110c"></script>
+  <script src="views/backup.js?v=20261110c"></script>
 </body>
 </html>

@@ -243,6 +243,49 @@
 .alert-warning { background: var(--warning-muted); border-color: rgba(245,158,11,.3);   color: #fcd34d; }
 .alert-danger  { background: var(--danger-muted);  border-color: rgba(239,68,68,.3);    color: #fca5a5; }
 
+/* ---------- 启动失败诊断 ---------- */
+.diag-card {
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid rgba(239, 68, 68, .35);
+  border-left: 3px solid var(--danger);
+  border-radius: var(--r-md);
+  background: var(--danger-muted);
+}
+.diag-head {
+  display: flex; align-items: flex-start; gap: var(--sp-3);
+}
+.diag-icon {
+  color: var(--danger); font-weight: 700;
+  font-size: var(--fs-lg); line-height: 1.2;
+}
+.diag-text { flex: 1; min-width: 0; }
+.diag-title {
+  font-weight: 700; color: #fca5a5; font-size: var(--fs-sm);
+}
+.diag-reason {
+  margin-top: 2px; color: var(--text-secondary);
+  font-size: var(--fs-xs); line-height: 1.6;
+}
+.diag-advice {
+  margin: var(--sp-2) 0 0; padding-left: var(--sp-5);
+  color: var(--text-secondary); font-size: var(--fs-xs); line-height: 1.8;
+}
+.diag-advice ol { margin: 0; padding-left: var(--sp-5); }
+.diag-advice li { margin-bottom: 2px; }
+.diag-raw {
+  margin-top: var(--sp-2); padding: var(--sp-2);
+  background: rgba(0, 0, 0, .25); border-radius: var(--r-sm);
+  font-size: var(--fs-xs); color: var(--text-muted);
+  word-break: break-all; user-select: text;
+}
+.diag-note {
+  margin-bottom: var(--sp-2); padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm); background: var(--warning-muted);
+  color: #fcd34d; font-size: var(--fs-xs);
+}
+.terminal .ln-error { color: #fca5a5; font-weight: 600; }
+
 /* ---------- 空状态 ---------- */
 .empty {
   text-align: center;
@@ -300,6 +343,69 @@
   word-break: break-all;
   user-select: text;
 }
+
+/* 会话来源标记（桌面子进程 / 官方 Web 面板） */
+.session-source {
+  font-size: var(--fs-xs);
+  padding: 1px 6px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  white-space: nowrap;
+}
+.session-source.web {
+  color: var(--purple);
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(167, 139, 250, 0.12);
+}
+
+/* 容量计量（并发 x/3、会话 y/10） */
+.capacity {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.capacity-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+.capacity-item .capacity-num {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.capacity-item.full {
+  border-color: rgba(239, 68, 68, 0.4);
+  background: var(--danger-muted);
+  color: #fca5a5;
+}
+.capacity-item.full .capacity-num { color: #fca5a5; }
+.capacity-item.web-online {
+  border-color: rgba(167, 139, 250, 0.35);
+  color: var(--purple);
+}
+.capacity-bar {
+  width: 60px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+.capacity-bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.capacity-item.full .capacity-bar i { background: var(--danger); }
 
 /* ---------- 模态对话框 ---------- */
 .modal-mask {

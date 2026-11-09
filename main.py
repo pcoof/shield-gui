@@ -15,7 +15,12 @@ from ctypes import wintypes
 import webview
 
 # 让 ui 目录可通过相对路径找到（pywebview 加载本地文件用绝对路径）
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# PyInstaller onefile 会把 ui/ 解压到 sys._MEIPASS，显式指向它，
+# 避免打包后 __file__ 落在别处导致 UI_DIR 指向不存在的目录。
+if getattr(sys, "frozen", False) and getattr(sys, "_MEIPASS", None):
+    BASE_DIR = sys._MEIPASS
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UI_DIR = os.path.join(BASE_DIR, "ui")
 
 # 把项目根加入 sys.path，确保包内 import 正常

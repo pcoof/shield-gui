@@ -2,6 +2,26 @@
    Shield GUI — 前端核心：路由 + 全局状态 + 事件总线 + 工具
    ========================================================================== */
 
+// ---------- 视图容器（必须最先定义） ----------
+// 各 views/*.js 会往这个对象里塞方法。显式挂到 window，避免脚本加载顺序
+// 或 WebView2 缓存导致视图文件里访问 Views 时拿到旧对象 / undefined。
+const Views = {};
+window.Views = Views;
+
+// 视图 → 脚本文件（视图未加载时用于自动重载自愈）
+const VIEW_SCRIPTS = {
+  dashboard:   'views/dashboard.js',
+  tunnelNew:   'views/tunnel-new.js',
+  presets:     'views/presets.js',
+  sessions:    'views/sessions.js',
+  protocols:   'views/protocols.js',
+  plugins:     'views/plugins.js',
+  service:     'views/service.js',
+  credentials: 'views/credentials.js',
+  backup:      'views/backup.js',
+  settings:    'views/settings.js',
+};
+
 // ---------- pywebview API 桥接封装 ----------
 // pywebview 在 window.pywebview.api 上挂载 Python 方法，但调用是异步的 Promise。
 // 不同 pywebview 版本下，第一次调用可能要等 window.pywebview.readyState == 'loaded'。
@@ -117,52 +137,37 @@ const TitleBar = {
     window.open('https://github.com/pcoof/shield-gui', '_blank');
   },
 
-  async downloadGUIUpdate() {
-    try {
-      const res = await Shield.call('check_updates');
-      const info = res && res.gui;
-      if (info && info.download_url) {
-        Shield.call('open_web_ui', 0);
-        toast('已打开 GitHub Release 页', 'info');
-        window.open(info.release_url || info.download_url, '_blank');
-      } else {
-        toast('暂无可用更新', 'info');
-      }
-    } catch (e) {
-      toast('检查更新失败: ' + e.message, 'error');
-    }
+  /** 应用内直接下载新版本并替换（不再跳转 GitHub 页面） */
+  downloadGUIUpdate() {
+    UpdateUI.start('gui', 'Shield GUI');
   },
 
-  async downloadShieldUpdate() {
-    try {
-      const res = await Shield.call('check_updates');
-      const info = res && res.shield;
-      if (info && info.download_url) {
-        window.open(info.download_url, '_blank');
-        toast('已打开下载页', 'info');
-      } else {
-        toast('暂无可用更新', 'info');
-      }
-    } catch (e) {
-      toast('检查更新失败: ' + e.message, 'error');
-    }
+  /** 应用内直接下载 Shield CLI 新版本（直链/镜像）并替换 shield.exe */
+  downloadShieldUpdate() {
+    UpdateUI.start('shield', 'Shield CLI');
   },
 
   async checkForUpdates() {
     try {
       const res = await Shield.call('check_updates');
       if (!res) return;
+      State.updateInfo = res;
       // GUI 更新按钮
       const guiBtn = document.getElementById('btn-gui-update');
       if (guiBtn && res.gui && res.gui.has_update) {
         guiBtn.textContent = `⬆ GUI v${res.gui.latest_version}`;
+        guiBtn.title = `下载通道：GitHub 直链 + 镜像（${(res.mirrors || []).join(' / ') || '无'}）`;
         guiBtn.classList.remove('hidden');
       }
       // Shield CLI 更新按钮
       const shieldBtn = document.getElementById('btn-shield-update');
       if (shieldBtn && res.shield && res.shield.has_update) {
         shieldBtn.textContent = `⬆ CLI v${res.shield.latest_version}`;
+        shieldBtn.title = `下载通道：GitHub 直链 + 镜像（${(res.mirrors || []).join(' / ') || '无'}）`;
         shieldBtn.classList.remove('hidden');
+      }
+      if (res.errors && res.errors.length) {
+        console.warn('更新检测部分通道失败：', res.errors);
       }
     } catch (e) {
       // 静默失败，不影响主流程
@@ -171,11 +176,111 @@ const TitleBar = {
   }
 };
 
+// ---------- 更新进度条（后端 install_update 主动回调 UpdateUI.onProgress） ----------
+const UpdateUI = {
+  running: false,
+  _hideTimer: null,
+
+  start(target, label) {
+    if (this.running) { toast('已有更新任务在进行中，请稍候…', 'info'); return; }
+    this.running = true;
+    this.label = label || '更新';
+    this.show('正在连接更新通道…', 0, true);
+    Shield.call('install_update', target).then(res => {
+      if (!res || !res.started) {
+        this.running = false;
+        this.hide(true);
+        toast((res && res.error) || '更新启动失败', 'error');
+      }
+    }).catch(e => {
+      this.running = false;
+      this.hide(true);
+      toast('更新启动失败: ' + e.message, 'error');
+    });
+  },
+
+  show(text, pct, indeterminate) {
+    const wrap = document.getElementById('update-progress');
+    if (!wrap) return;
+    if (this._hideTimer) { clearTimeout(this._hideTimer); this._hideTimer = null; }
+    wrap.classList.remove('hidden');
+    wrap.classList.toggle('indeterminate', !!indeterminate);
+    const bar = document.getElementById('update-progress-bar');
+    const txt = document.getElementById('update-progress-text');
+    if (bar) bar.style.width = Math.max(3, Math.min(100, pct || 0)) + '%';
+    if (txt) txt.textContent = text || '';
+  },
+
+  hide(immediate) {
+    const wrap = document.getElementById('update-progress');
+    if (!wrap) return;
+    if (immediate) {
+      wrap.classList.add('hidden');
+      wrap.classList.remove('indeterminate');
+      return;
+    }
+    if (this._hideTimer) clearTimeout(this._hideTimer);
+    this._hideTimer = setTimeout(() => wrap.classList.add('hidden'), 1800);
+  },
+
+  onProgress(d) {
+    if (!d) return;
+    const stage = d.stage || '';
+    const msg = d.message || '';
+
+    if (stage === 'error') {
+      this.running = false;
+      this.hide(true);
+      toast(msg || '更新失败', 'error', 6000);
+      return;
+    }
+    if (stage === 'up_to_date') {
+      this.running = false;
+      this.hide(true);
+      toast(msg || '已是最新版本', 'info');
+      return;
+    }
+    if (stage === 'done') {
+      this.running = false;
+      this.show(msg || '更新完成', 100, false);
+      toast(msg || '更新完成', 'success', 6000);
+      this.hide();
+      setTimeout(refreshEnv, 600);
+      if (d.manual && d.path) {
+        confirmDialog('更新已下载', `${msg}\n\n是否打开文件所在文件夹？`)
+          .then(ok => { if (ok) Shield.call('open_path', d.path); });
+      }
+      return;
+    }
+    // prepare / check / download / stop / extract / restore / replace / restart
+    this.show(msg || '更新中…', d.percent || 0, false);
+  }
+};
+window.UpdateUI = UpdateUI;
+
+// ---------- 环境信息刷新（更新完成后刷新版本号显示） ----------
+async function refreshEnv() {
+  try {
+    const env = await Shield.call('get_env');
+    State.env = env || State.env;
+    if (env && env.gui_version) {
+      const el = document.getElementById('titlebar-version');
+      if (el) el.textContent = 'v' + env.gui_version;
+    }
+    if (env && env.version) {
+      const nav = document.getElementById('nav-version');
+      if (nav) nav.textContent = env.version;
+    }
+  } catch (e) { /* 静默 */ }
+}
+
 // ---------- 全局状态 ----------
 const State = {
   env: null,            // get_env() 返回值
   protocols: {},        // 协议元信息
-  sessions: [],         // 活动会话
+  sessions: [],         // 活动会话（含 Web 面板会话）
+  limits: null,         // 容量上限占用（多 10 个 / 并发 3）
+  updateInfo: null,     // 最近一次 check_updates 结果
   pollTimer: null,      // 会话轮询定时器
   currentRoute: null,
   pendingPreset: null,  // 待填充的预设（内置常用端口预设用）
@@ -183,19 +288,58 @@ const State = {
 
 // ---------- 路由表 ----------
 const ROUTES = {
-  dashboard:  { title: '仪表盘',         subtitle: 'Shield 服务总览',     render: () => Views.dashboard() },
-  'tunnel-new': { title: '新建隧道',     subtitle: '创建一个新的安全隧道', render: () => Views.tunnelNew() },
-  presets:    { title: '连接预设',       subtitle: '保存与复用隧道配置',   render: () => Views.presets() },
-  sessions:   { title: '活动会话',       subtitle: '管理运行中的隧道',     render: () => Views.sessions() },
-  protocols:  { title: '协议指南',       subtitle: '8 种协议的用法',       render: () => Views.protocols() },
-  plugins:    { title: '插件管理',       subtitle: '扩展协议支持',         render: () => Views.plugins() },
-  service:    { title: '系统服务',       subtitle: '安装/启停/卸载',       render: () => Views.service() },
-  credentials:{ title: '凭证与安全',     subtitle: '凭证管理与访问模式',   render: () => Views.credentials() },
-  backup:     { title: '备份恢复',       subtitle: '本地/远程/定时备份',  render: () => Views.backup() },
-  settings:   { title: '应用配置',       subtitle: '自定义服务器/缓存',    render: () => Views.settings() },
+  dashboard:  { title: '仪表盘',         subtitle: 'Shield 服务总览',     view: 'dashboard' },
+  'tunnel-new': { title: '新建隧道',     subtitle: '创建一个新的安全隧道', view: 'tunnelNew' },
+  presets:    { title: '连接预设',       subtitle: '保存与复用隧道配置',   view: 'presets' },
+  sessions:   { title: '活动会话',       subtitle: '管理运行中的隧道',     view: 'sessions' },
+  protocols:  { title: '协议指南',       subtitle: '8 种协议的用法',       view: 'protocols' },
+  plugins:    { title: '插件管理',       subtitle: '扩展协议支持',         view: 'plugins' },
+  service:    { title: '系统服务',       subtitle: '安装/启停/卸载',       view: 'service' },
+  credentials:{ title: '凭证与安全',     subtitle: '凭证管理与访问模式',   view: 'credentials' },
+  backup:     { title: '备份恢复',       subtitle: '本地/远程/定时备份',  view: 'backup' },
+  settings:   { title: '应用配置',       subtitle: '自定义服务器/缓存',    view: 'settings' },
 };
 
+// ---------- 视图脚本自愈 ----------
+/** 视图函数缺失时，带随机参数重新加载对应脚本，绕开 WebView2 的坏缓存副本。 */
+function reloadViewScript(view) {
+  const src = VIEW_SCRIPTS[view];
+  if (!src) return Promise.resolve(false);
+  return new Promise(resolve => {
+    let done = false;
+    const finish = ok => {
+      if (done) return;
+      done = true;
+      resolve(ok && typeof Views[view] === 'function');
+    };
+    const s = document.createElement('script');
+    s.src = src + '?reload=' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+    s.onload = () => finish(true);
+    s.onerror = () => finish(false);
+    document.head.appendChild(s);
+    setTimeout(() => finish(false), 4000);
+  });
+}
+
 // ---------- 路由导航 ----------
+/** 启动时检查所有视图函数，缺失的脚本自动重载一次（绕开坏缓存 / 打包资源缺失）。 */
+async function recoverViews() {
+  const missing = Object.keys(VIEW_SCRIPTS).filter(v => typeof Views[v] !== 'function');
+  if (!missing.length) return [];
+  console.warn('[Shield GUI] 视图脚本未加载，尝试恢复:', missing.join(', '));
+  const results = await Promise.all(missing.map(v => reloadViewScript(v)));
+  const still = missing.filter((v, i) => !results[i]);
+  try {
+    if (still.length) {
+      console.error('[Shield GUI] 恢复失败的视图:', still.join(', '));
+      toast('部分页面资源未加载：' + still.join('、') + '，请重启程序', 'error');
+    } else {
+      toast('已自动恢复 ' + missing.length + ' 个页面脚本', 'success');
+    }
+  } catch { /* toast 容器尚未就绪时忽略 */ }
+  return still;
+}
+
 function navigate(route) {
   if (!ROUTES[route]) route = 'dashboard';
   State.currentRoute = route;
@@ -208,20 +352,54 @@ function navigate(route) {
   document.getElementById('topbar-subtitle').textContent = meta.subtitle;
   const root = document.getElementById('view-root');
   root.innerHTML = '';
-  try {
-    const html = meta.render();
+
+  const render = () => {
+    const fn = Views[meta.view];
+    if (typeof fn !== 'function') {
+      const err = new Error(`视图 ${meta.view} 未加载（${VIEW_SCRIPTS[meta.view] || '未知脚本'}）`);
+      err.code = 'VIEW_MISSING';
+      throw err;
+    }
+    return fn();
+  };
+  const mount = html => {
     if (html) {
       const wrap = document.createElement('div');
       wrap.className = 'view';
       wrap.innerHTML = html;
       root.appendChild(wrap);
     }
-    // 调用挂载钩子
+    // 调用挂载钩子（钩子出错不应把整页替换成错误卡片）
     const hookName = '_mount_' + route.replace(/-/g, '_');
-    if (typeof Views[hookName] === 'function') Views[hookName]();
-  } catch (e) {
+    if (typeof Views[hookName] === 'function') {
+      try { Views[hookName](); } catch (e) { console.error('mount hook failed', hookName, e); }
+    }
+  };
+  const showError = e => {
     root.innerHTML = `<div class="alert alert-danger"><b>渲染错误</b><pre>${escapeHtml(String(e))}</pre></div>`;
     console.error(e);
+  };
+
+  try {
+    mount(render());
+  } catch (e) {
+    if (!e || e.code !== 'VIEW_MISSING') {
+      showError(e);
+      return;
+    }
+    // 脚本没加载成功：自动重载一次，避免用户只看到一句 TypeError
+    root.innerHTML = `<div class="alert alert-info"><b>正在恢复页面…</b><div class="text-sm">视图脚本未加载，正在重新加载 ${escapeHtml(VIEW_SCRIPTS[meta.view] || meta.view)}</div></div>`;
+    reloadViewScript(meta.view).then(ok => {
+      if (State.currentRoute !== route) return;  // 用户已切走，别覆盖新页面
+      if (!ok) {
+        root.innerHTML = `<div class="alert alert-danger"><b>页面资源缺失</b><pre>${escapeHtml(
+          '未能加载 ' + (VIEW_SCRIPTS[meta.view] || meta.view) +
+          '\n请重启程序；若仍失败，请用源码运行 python main.py，或重新打包 exe（WebView2 可能缓存了损坏的脚本）。'
+        )}</pre></div>`;
+        return;
+      }
+      try { mount(render()); } catch (e2) { showError(e2); }
+    });
   }
 }
 
@@ -284,7 +462,7 @@ function confirmDialog(title, body) {
     mask.innerHTML = `
       <div class="modal">
         <h3 class="modal-title">${escapeHtml(title)}</h3>
-        <div class="modal-body">${escapeHtml(body)}</div>
+        <div class="modal-body">${escapeHtml(body).replace(/\n/g, '<br>')}</div>
         <div class="modal-actions">
           <button class="btn" data-act="cancel">取消</button>
           <button class="btn btn-primary" data-act="ok">确认</button>
@@ -301,6 +479,32 @@ function confirmDialog(title, body) {
   });
 }
 
+/**
+ * 启动隧道（统一处理启动前的网络预检）。
+ * 预检失败时给出中文诊断并询问是否仍要启动，不硬拦用户。
+ * 返回 { ok, res, cancelled }。
+ */
+async function startTunnelWithPreflight(params) {
+  let res = await Shield.call('start_tunnel', params, false);
+  if (res && res.need_confirm) {
+    const d = res.diagnosis || {};
+    const lines = [
+      d.title || '控制台不可达',
+      d.reason || '',
+      '',
+      '建议：',
+      ...(d.advice || []).map(a => '· ' + a),
+      '',
+      '仍要启动隧道吗？（CLI 内部仍会自动重试 5 次）',
+    ];
+    const go = await confirmDialog('网络检测未通过', lines.join('\n'));
+    if (!go) return { ok: false, cancelled: true, res };
+    res = await Shield.call('start_tunnel', params, true);
+  }
+  if (!res || res.error) return { ok: false, cancelled: false, res };
+  return { ok: true, cancelled: false, res };
+}
+
 // ---------- 会话轮询 ----------
 function startSessionPolling() {
   if (State.pollTimer) return;
@@ -312,14 +516,19 @@ function stopSessionPolling() {
 }
 async function refreshSessions() {
   try {
-    const res = await Shield.call('list_sessions');
+    const [res, limits] = await Promise.all([
+      Shield.call('list_sessions'),
+      Shield.call('session_limits').catch(() => null),
+    ]);
     State.sessions = Array.isArray(res) ? res : [];
-    // 更新导航徽章
+    if (limits) State.limits = limits;
+    // 更新导航徽章（运行中 / 并发上限）
     const badge = document.getElementById('nav-sessions-badge');
     const running = State.sessions.filter(s => s.status === 'running').length;
     if (running > 0) {
       badge.textContent = running;
       badge.classList.remove('hidden');
+      badge.title = `运行中 ${running}/${(State.limits && State.limits.max_running) || 3}`;
     } else {
       badge.classList.add('hidden');
     }
@@ -345,6 +554,9 @@ function checkMaximized() {
 
 // ---------- 启动 ----------
 async function boot() {
+  // 先自愈未加载的视图脚本，再绑定事件与渲染首个页面
+  await recoverViews();
+
   // 最大化检测 + 窗口 resize 时重新检测
   checkMaximized();
   window.addEventListener('resize', checkMaximized);
@@ -381,6 +593,8 @@ async function boot() {
     const ok = await Shield.call('open_web_ui', 8181);
     if (ok) toast(started ? 'Web UI 已启动并打开' : '已打开浏览器', 'success');
     else toast('打开失败', 'error');
+    // 面板里的应用会同步到「活动会话」，稍后刷新一次
+    setTimeout(refreshSessions, 1500);
   });
 
   // 检测环境
@@ -418,7 +632,5 @@ async function boot() {
   setTimeout(() => TitleBar.checkForUpdates(), 3000);
 }
 
-// 视图容器（各 views 文件往里塞方法）
-const Views = {};
-
+// 视图容器与 VIEW_SCRIPTS 已在文件顶部定义
 document.addEventListener('DOMContentLoaded', boot);

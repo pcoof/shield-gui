@@ -322,16 +322,30 @@ const TunnelForm = {
     if (!params.target && this.protocols[params.protocol]?.defPort) {
       // 允许留空（用默认端口）
     }
+    // 容量预检：并发 3 / 会话 10（后端仍会二次校验）
+    const limit = State.limits || {};
+    if (limit.can_start === false) {
+      const reason = (limit.running >= limit.max_running)
+        ? `并发已满（${limit.running}/${limit.max_running}），请先停止一个运行中的隧道`
+        : `活动会话已达上限（${limit.sessions}/${limit.max_sessions}），请先移除不用的会话`;
+      toast(reason, 'warning');
+      return;
+    }
     const btn = document.getElementById('btn-start');
     btn.disabled = true;
-    btn.textContent = '⏳ 启动中…';
+    btn.textContent = '⏳ 正在检测网络…';
     try {
-      const res = await Shield.call('start_tunnel', params);
-      if (res.error) {
-        toast('启动失败: ' + res.error, 'error');
+      const out = await startTunnelWithPreflight(params);
+      if (out.cancelled) return;
+      const res = out.res || {};
+      if (!out.ok) {
+        toast('启动失败: ' + (res.error || '未知错误'), 'error');
         return;
       }
       toast('隧道已启动，会话 ID: ' + res.session_id, 'success');
+      if (res.preflight && res.preflight.ok === false) {
+        toast('控制台检测未通过，若连接失败请到「活动会话」查看诊断', 'warning');
+      }
       // 跳转会话页
       setTimeout(() => navigate('sessions'), 500);
     } catch (e) {

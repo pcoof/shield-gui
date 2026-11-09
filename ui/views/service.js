@@ -15,7 +15,10 @@ Views.service = function () {
 
       <div class="card">
         <div class="card-header"><h3 class="card-title">🌐 Web UI 模式</h3></div>
-        <p class="text-secondary text-sm mb-4">在本地后台启动 Shield 官方 Web 管理面板，长期运行不关闭。</p>
+        <p class="text-secondary text-sm mb-4">
+          在本地后台启动 Shield 官方 Web 管理面板，长期运行不关闭。
+          面板里添加/连接的应用会自动同步到「活动会话」，并占用同一份 3 并发 / 10 会话额度。
+        </p>
         <div class="form-row">
           <label class="form-label">Web UI 端口</label>
           <input class="input mono" id="webui-port" type="number" value="8181">
@@ -186,11 +189,14 @@ Views._startWebUI = async function () {
     if (res.code === 0 && !res.error) {
       toast(`Web UI 已启动于端口 ${port}（PID ${res.pid}）`, 'success');
       Views._checkWebUIStatus();
+      // 面板里的应用会同步到「活动会话」
+      setTimeout(refreshSessions, 1500);
       // 自动打开浏览器
       setTimeout(() => Views._openWebUI(), 800);
     } else if (res.already_running) {
       toast('Web UI 已在运行', 'info');
       Views._checkWebUIStatus();
+      setTimeout(refreshSessions, 800);
       setTimeout(() => Views._openWebUI(), 500);
     } else {
       toast('启动失败: ' + (res.error || '未知错误'), 'error');

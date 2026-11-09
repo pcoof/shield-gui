@@ -142,8 +142,10 @@ Views._launchPreset = async function (pid) {
   if (!p) { toast('预设不存在', 'error'); return; }
   toast('正在启动预设: ' + (p.name || ''), 'info');
   try {
-    const res = await Shield.call('start_tunnel', p);
-    if (res.error) { toast('启动失败: ' + res.error, 'error'); return; }
+    const out = await startTunnelWithPreflight(p);
+    if (out.cancelled) return;
+    const res = out.res || {};
+    if (!out.ok) { toast('启动失败: ' + (res.error || '未知错误'), 'error'); return; }
     toast('已启动', 'success');
     setTimeout(() => navigate('sessions'), 400);
   } catch (e) {

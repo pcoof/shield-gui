@@ -15,7 +15,9 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Callable, Optional
+
+from core import net_diag
 
 IS_WIN = os.name == "nt"
 # Windows 下隐藏控制台窗口
@@ -48,6 +50,14 @@ class Session:
     started_at: float = 0.0
     ended_at: float = 0.0
     display_name: str = ""
+    # 启动失败时的结构化中文诊断（net_diag.diagnose_log 的结果）
+    error_info: Optional[dict] = None
+    # CLI 内部重试提示，例如「第 2/5 次尝试失败，正在重试…」
+    warning: str = ""
+    # GUI 自动重试次数（避免无限重启）
+    retry_count: int = 0
+    # 本次连接使用的服务器地址（便于诊断展示）
+    server: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -62,6 +72,11 @@ class Session:
             "display_name": self.display_name,
             "log_size": len(self.log_buffer),
             "pid": self.process.pid if self.process else None,
+            "error_info": self.error_info,
+            "error": self.error_info.get("title") if self.error_info else "",
+            "warning": self.warning,
+            "retry_count": self.retry_count,
+            "server": self.server,
         }
 
 
@@ -70,16 +85,23 @@ class ShieldRunner:
 
     LOG_CAP = 256 * 1024  # 单会话日志上限 256KB，超出滚动
 
-    def __init__(self, shield_exe: str):
+    def __init__(self, shield_exe: str, on_error: Optional[Callable] = None):
         self.shield_exe = shield_exe
         self._sessions: dict[str, Session] = {}
         self._lock = threading.Lock()
+        # 会话启动失败回调 (sid, diagnosis) -> None，由 PythonApi 注入
+        self.on_error = on_error
 
     # ---------- 长连接隧道 ----------
 
     def start_tunnel(self, argv: list, protocol: str, target: str,
-                     display_name: str = "") -> dict:
-        """启动一个隧道子进程。argv 已是完整参数列表（不含 exe 路径）。"""
+                     display_name: str = "", env: Optional[dict] = None,
+                     server: str = "", retry_count: int = 0) -> dict:
+        """启动一个隧道子进程。argv 已是完整参数列表（不含 exe 路径）。
+
+        ``env`` 为完整子进程环境（可含 HTTP_PROXY 等，Go net/http 会读取）；
+        ``server`` 仅用于诊断展示；``retry_count`` 用于限制自动重试次数。
+        """
         full_argv = [self.shield_exe] + list(argv)
         sid = uuid.uuid4().hex[:12]
         session = Session(
@@ -89,10 +111,11 @@ class ShieldRunner:
             argv=list(argv),
             display_name=display_name or f"{protocol} {target}",
             started_at=time.time(),
+            server=server,
+            retry_count=retry_count,
         )
         try:
-            proc = subprocess.Popen(
-                full_argv,
+            popen_kw = dict(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
@@ -103,6 +126,9 @@ class ShieldRunner:
                 errors="replace",
                 bufsize=1,
             )
+            if env:
+                popen_kw["env"] = env
+            proc = subprocess.Popen(full_argv, **popen_kw)
         except Exception as exc:  # 启动失败
             session.status = "error"
             session.log_buffer = f"[启动失败] {exc}\n"
@@ -147,7 +173,44 @@ class ShieldRunner:
                         u = u.rstrip(".,;:)")  # 去尾部标点
                         if u not in session.access_urls:
                             session.access_urls.append(u)
+                    # CLI 内部重试：只更新提示，不判定为最终失败
+                    attempt = net_diag.parse_retry_attempt(clean)
+                    if attempt:
+                        session.warning = (
+                            f"quick-setup 第 {attempt[0]}/{attempt[1]} 次尝试失败，"
+                            "CLI 正在自动重试…"
+                        )
+                    snapshot = session.log_buffer
+                # CLI 明确宣告失败时立刻纠正状态，别让 UI 继续显示「运行中」
+                if net_diag.is_fatal_line(clean) and session.error_info is None:
+                    diag = net_diag.diagnose_log(snapshot)
+                    if diag:
+                        self._mark_error(sid, diag)
         except Exception:
+            pass
+
+    def _mark_error(self, sid: str, diag: dict) -> None:
+        """标记会话失败：纠正状态、写入中文诊断、回调通知前端。"""
+        with self._lock:
+            session = self._sessions.get(sid)
+            if not session or session.error_info:
+                return
+            session.error_info = diag
+            session.warning = ""
+            # 进程若仍显示 running，纠正为 error（CLI 通常随后自行退出）
+            if session.status in ("running", "starting"):
+                session.status = "error"
+            session.log_buffer += net_diag.format_diagnosis(diag)
+        if self.on_error:
+            # 单独线程执行，避免阻塞日志读取线程
+            threading.Thread(
+                target=self._safe_notify, args=(sid, diag), daemon=True
+            ).start()
+
+    def _safe_notify(self, sid: str, diag: dict) -> None:
+        try:
+            self.on_error(sid, diag)
+        except Exception:  # noqa: BLE001 - 通知失败不能影响会话
             pass
 
     def _watcher(self, sid: str) -> None:
@@ -157,8 +220,15 @@ class ShieldRunner:
         rc = session.process.wait()
         with self._lock:
             session.ended_at = time.time()
-            session.status = "stopped" if rc in (0, None) else "error"
+            session.status = "error" if (rc not in (0, None) or session.error_info) else "stopped"
             session.log_buffer += f"\n[进程结束，退出码 {rc}]\n"
+            snapshot = session.log_buffer
+            has_diag = session.error_info is not None
+        # 兜底：CLI 没打印明确的失败行，但非零退出且有错误输出
+        if not has_diag and rc not in (0, None):
+            diag = net_diag.diagnose_log(snapshot)
+            if diag:
+                self._mark_error(sid, diag)
 
     def stop_tunnel(self, sid: str) -> bool:
         with self._lock:
@@ -201,7 +271,16 @@ class ShieldRunner:
                 "total": len(full),
                 "access_urls": list(session.access_urls),
                 "status": session.status,
+                "error_info": session.error_info,
+                "warning": session.warning,
             }
+
+    def seed_log(self, sid: str, text: str) -> None:
+        """重试时把上一次的诊断日志带到新会话，方便对照。"""
+        with self._lock:
+            session = self._sessions.get(sid)
+            if session:
+                session.log_buffer = text
 
     def remove_session(self, sid: str) -> bool:
         self.stop_tunnel(sid)

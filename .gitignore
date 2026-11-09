@@ -21,5 +21,6 @@ Thumbs.db
 # Project specific
 *.zip
 .omo/
+.workbuddy/
 
 file_version_info.txt

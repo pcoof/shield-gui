@@ -26,6 +26,13 @@
                   onclick="TitleBar.downloadShieldUpdate()">
             <span>⬆</span> CLI 更新
           </button>
+          <!-- 更新进度（直链/镜像下载 + 自动替换） -->
+          <div class="update-progress hidden" id="update-progress">
+            <div class="update-progress-track">
+              <div class="update-progress-bar" id="update-progress-bar"></div>
+            </div>
+            <span class="update-progress-text" id="update-progress-text">0%</span>
+          </div>
         </div>
       </div>
       <div class="titlebar-actions">
@@ -130,12 +137,13 @@
   <div class="toast-stack" id="toast-stack"></div>
 
   <!-- 脚本 -->
-  <script src="app.js"></script>
-  <script src="views/dashboard.js"></script>
-  <script src="views/tunnel-new.js"></script>
-  <script src="views/presets.js"></script>
-  <script src="views/sessions.js"></script>
-  <script src="views/protocols.js"></script>
+  <!-- 版本号用于绕开 WebView2 对 file:// 脚本的缓存；改动 UI 后同步升级 v 值 -->
+  <script src="app.js?v=20261110b"></script>
+  <script src="views/dashboard.js?v=20261110b"></script>
+  <script src="views/tunnel-new.js?v=20261110b"></script>
+  <script src="views/presets.js?v=20261110b"></script>
+  <script src="views/sessions.js?v=20261110b"></script>
+  <script src="views/protocols.js?v=20261110b"></script>
   <!-- ========== 边缘/角部 resize 手柄（frameless 窗口用） ========== -->
   <!-- 四边 -->
   <div class="resize-handle edge-t" data-edge="t"></div>
@@ -148,10 +156,10 @@
   <div class="resize-handle corner-bl" data-edge="bl"></div>
   <div class="resize-handle corner-br" data-edge="br"></div>
 
-  <script src="views/plugins.js"></script>
-  <script src="views/service.js"></script>
-  <script src="views/credentials.js"></script>
-  <script src="views/settings.js"></script>
-  <script src="views/backup.js"></script>
+  <script src="views/plugins.js?v=20261110b"></script>
+  <script src="views/service.js?v=20261110b"></script>
+  <script src="views/credentials.js?v=20261110b"></script>
+  <script src="views/settings.js?v=20261110b"></script>
+  <script src="views/backup.js?v=20261110b"></script>
 </body>
 </html>

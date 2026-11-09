@@ -2,8 +2,11 @@
 Views.dashboard = function () {
   const env = State.env || {};
   const cfg = env.config || {};
-  const running = (State.sessions || []).filter(s => s.status === 'running').length;
+  const limits = State.limits || {};
+  const running = (State.sessions || []).filter(s => s.status === 'running' || s.status === 'starting').length;
   const total = (State.sessions || []).length;
+  const maxRunning = limits.max_running || 3;
+  const maxSessions = limits.max_sessions || 10;
 
   return `
     <div class="view-header">
@@ -28,10 +31,10 @@ Views.dashboard = function () {
         <div class="card-header"><h3 class="card-title">⬇️ 一键安装</h3></div>
         <div style="display:flex;flex-direction:column;gap:var(--sp-3)">
           <button class="btn btn-primary btn-block" onclick="Views._installFromGitHub()">
-            📦 从 GitHub Release 自动安装
+            📦 一键下载安装（直链 / 镜像）
           </button>
           <p class="text-xs text-secondary" style="margin:0">
-            下载 <span class="mono">shield-windows-amd64.zip</span> 并解压到 <span class="mono">C:\\Program Files\\ShieldCLI\\</span>
+            下载 <span class="mono">shield-windows-amd64.zip</span> 并解压到 <span class="mono">C:\\Program Files\\ShieldCLI\\</span>（自动测速选最快镜像）
           </p>
           <div style="padding-top:var(--sp-3);border-top:1px solid var(--border)">
             <button class="btn btn-block" onclick="Views._installFromBat()">
@@ -81,8 +84,8 @@ Views.dashboard = function () {
       </div>
       <div class="stat">
         <div class="stat-icon" style="background:var(--success-muted);color:var(--success)">🟢</div>
-        <div class="stat-value">${running}</div>
-        <div class="stat-label">活动隧道</div>
+        <div class="stat-value">${Math.min(running, 99)}<span style="font-size:var(--fs-md);color:var(--text-muted)">/${maxRunning}</span></div>
+        <div class="stat-label">活动隧道（并发上限 ${maxRunning}）</div>
       </div>
       <div class="stat">
         <div class="stat-icon" style="background:var(--info-muted);color:var(--info)">📋</div>
@@ -122,6 +125,10 @@ Views.dashboard = function () {
               </td></tr>
           <tr><td class="text-muted">存储模式</td>
               <td>${cfg.official_dir ? '<span class="badge badge-success">官方目录</span>' : '<span class="badge badge-warning">JSON 兜底</span>'}</td></tr>
+          <tr><td class="text-muted">Web 面板同步</td>
+              <td id="dash-web">—</td></tr>
+          <tr><td class="text-muted">会话容量</td>
+              <td id="dash-limits">—</td></tr>
           <tr><td class="text-muted">支持协议</td>
               <td>${Object.keys(State.protocols).map(p=>`<span class="badge badge-muted" style="margin-right:4px">${p}</span>`).join('')}</td></tr>
         </table>
@@ -137,7 +144,7 @@ Views.dashboard = function () {
         <div>
           <div class="badge badge-accent mb-2">推荐</div>
           <h4 style="margin:0 0 var(--sp-2)">🌐 Web UI 模式</h4>
-          <p class="text-secondary text-sm">浏览器图形化管理面板，最多管理 10 个应用，本地加密存储凭证。</p>
+          <p class="text-secondary text-sm">浏览器图形化管理面板。面板里添加的应用会同步到「活动会话」，与桌面端共用 10 个会话 / 3 个并发上限。</p>
           <button class="btn btn-sm btn-info mt-2" onclick="Views._launchWebUI()">
             🚀 启动 Web UI
           </button>
@@ -178,20 +185,48 @@ Views._mount_dashboard = async function () {
       }
     }
   } catch {}
+  // Web 面板同步状态 + 会话容量
+  try {
+    const [limits, web] = await Promise.all([
+      Shield.call('session_limits'),
+      Shield.call('web_ui_info'),
+    ]);
+    if (limits) State.limits = limits;
+    const webEl = document.getElementById('dash-web');
+    if (webEl && web) {
+      webEl.innerHTML = web.online
+        ? `<span class="badge badge-success">已同步</span>
+           <span class="mono text-sm" style="margin-left:6px">${escapeHtml(web.url)}</span>
+           <span class="text-muted text-xs" style="margin-left:6px">${web.apps} 个应用 · ${web.connected} 个已连接${web.version ? ' · v' + escapeHtml(web.version) : ''}</span>`
+        : `<span class="badge badge-muted">未运行</span>
+           <span class="text-muted text-xs" style="margin-left:6px">启动 Web UI 后，面板里的应用会自动出现在「活动会话」</span>`;
+    }
+    const limEl = document.getElementById('dash-limits');
+    if (limEl && limits) {
+      const full = limits.running >= limits.max_running;
+      limEl.innerHTML = `
+        并发 <b class="mono ${full ? 'text-danger' : ''}">${limits.running}/${limits.max_running}</b>
+        <span class="text-muted">·</span>
+        会话 <b class="mono">${limits.sessions}/${limits.max_sessions}</b>
+        <span class="text-muted text-xs" style="margin-left:6px">（桌面 ${limits.gui_sessions} · Web ${limits.web_sessions}）</span>`;
+    }
+  } catch {}
 };
 
 // ---------- 快速启动 ----------
 
 Views._launchWebUI = async function () {
-  const port = 8181;
+  const port = (State.limits && State.limits.web_ui_port) || 8181;
   try {
     const res = await Shield.call('start_web_ui', port);
     if (res.code === 0 && !res.error) {
       Shield.call('open_web_ui', port);
       toast('Web UI 已启动并打开', 'success');
+      setTimeout(refreshSessions, 1500);
     } else if (res.already_running) {
       Shield.call('open_web_ui', port);
       toast('Web UI 已在运行', 'info');
+      setTimeout(refreshSessions, 800);
     } else {
       toast('启动失败: ' + (res.error || '未知错误'), 'error');
     }
